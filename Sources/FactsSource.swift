@@ -25,7 +25,8 @@ struct SampleFactsSource: FactsSource {
             twrCumulative: 0.2335,
             qqqCumulative: 0.0188,
             sampleDays: 49,
-            accounts: ["5UK56277", "700013444"]
+            accounts: ["5UK56277", "700013444"],
+            flowUnknownDays: 17
         ))
     }
 }

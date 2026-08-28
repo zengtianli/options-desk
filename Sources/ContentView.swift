@@ -157,6 +157,15 @@ private struct HeroCard: View {
                 // 样本天数**必须和收益同框** —— 49 天的 23% 和 3 年的 23% 不是一回事。
                 Text("逐日链接 TWR · \(facts.sampleDays) 个交易日")
                     .font(.caption).foregroundStyle(.secondary)
+                // 现金流不全 → 这个数是暂定值,必须当场说,不能等人去翻脚注。
+                // 一笔没记的入金会被算成投资赚来的钱,而且错得毫无痕迹。
+                if !facts.flowComplete {
+                    Label("暂定值：\(facts.flowUnknownDays) 个交易日的资金流未记录",
+                          systemImage: "questionmark.circle.fill")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Palette.alarm)
+                        .padding(.top, 2)
+                }
                 Divider().padding(.vertical, 4)
                 HStack {
                     Text("净值").font(.subheadline).foregroundStyle(.secondary)
@@ -207,6 +216,10 @@ private struct FootnoteCard: View {
                 row("收益", "逐日链接 TWR，当日现金流计入期初基数")
                 row("基准", "QQQ 买入持有，同一窗口")
                 row("不含", "年化 / Sharpe —— 样本只有 \(facts.sampleDays) 天，误差带比数本身还宽")
+                if !facts.flowComplete {
+                    row("存疑", "\(facts.flowUnknownDays) 天 net_deposit 缺记录；已知悬案 2026-06-18 一笔 $35,939，"
+                             + "内部划转还是提现未定 —— 定性为提现则累计收益更高，不更低")
+                }
             }
         }
     }

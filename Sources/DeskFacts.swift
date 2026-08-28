@@ -17,6 +17,16 @@ struct DeskFacts: Equatable {
     let sampleDays: Int
     /// 合并进总账的账户
     let accounts: [String]
+    /// 有多少个交易日的资金流(入金/出金)**没有记录**。
+    ///
+    /// 不是装饰字段。TWR 的分母是「期初市值 + 当日现金流」——
+    /// 现金流缺一笔,那天的收益率就是错的,而且**错得毫无痕迹**:
+    /// 一笔没记的入金会被当成投资赚来的钱。2026-08-29 实测 50 个交易日里有 17 天缺,
+    /// 所以现在这个累计收益只能叫**暂定值**,不能叫结论。
+    let flowUnknownDays: Int
+
+    /// 现金流完整吗。不完整时首屏那个大字必须自带保留。
+    var flowComplete: Bool { flowUnknownDays == 0 }
 
     /// 超额。首屏最重要的那一栏 —— 2026-08-29 回填完 qqq_close 之前它根本算不出来。
     var excess: Double { twrCumulative - qqqCumulative }
