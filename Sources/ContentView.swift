@@ -16,7 +16,7 @@ struct ContentView: View {
     /// 注入,便于把「陈旧」那条路径也截图看一眼。
     let now: Date
 
-    init(source: FactsSource = SampleFactsSource(), now: Date = Date()) {
+    init(source: FactsSource = FactsSourceFactory.make(), now: Date = Date()) {
         self.source = source
         self.now = now
     }
@@ -155,7 +155,7 @@ private struct HeroCard: View {
                     .font(.system(size: 52, weight: .bold, design: .rounded))
                     .foregroundStyle(facts.twrCumulative >= 0 ? Palette.gain : Palette.loss)
                 // 样本天数**必须和收益同框** —— 49 天的 23% 和 3 年的 23% 不是一回事。
-                Text("逐日链接 TWR · \(facts.sampleDays) 个交易日")
+                Text("逐日链接 TWR · \(facts.sampleDays) 个交易日（\(max(0, facts.sampleDays - 1)) 个链接）")
                     .font(.caption).foregroundStyle(.secondary)
                 // 现金流不全 → 这个数是暂定值,必须当场说,不能等人去翻脚注。
                 // 一笔没记的入金会被算成投资赚来的钱,而且错得毫无痕迹。

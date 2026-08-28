@@ -166,12 +166,35 @@ transfers/deposits/statements 接口）：2026-06 月结单 PDF 的 Transfers / 
 
 ## 待办
 
-- [ ] **[P0]** net_deposit 那笔 $10,000 定性 + 落库或落守卫（工作流在跑）
-- [ ] **[P0]** 新鲜度守卫挂进 review_run.py + 反向验证变红（工作流在跑）
-- [ ] **[P0]** stockoptions API 换源 quant.db + 合并口径 + staleness 字段（工作流在跑）
-- [ ] iOS 首屏：Gate 凭证移植 + 累计/超额/样本天数三个数（**先跑一屏再铺开**，hook 实拦）
-- [ ] API 上线（`/ship`，需 authgate；本轮工作流明令禁部署）
-- [ ] `~/investment` 与 `~/Dev/stations` 两侧的改动 push
+**本轮已完成（全部 commit + push）**
+
+- [x] qqq_close 回填 22 行 → 主账户 0/77 空洞；回填器 + 价格源带 provenance 进仓
+- [x] net_deposit fail-closed 对账守卫 `reconcile_net_deposit.py`（12 条反向验证，**一个字没写库**）
+- [x] 数据新鲜度守卫挂进 `review_run.py`（不挂 cron；陈旧 → 醒目告警 + 非零退出码；反向验证四红一绿）
+- [x] 哑弹 `com.tianli.investment-eod-review.plist` 退役到 Trash（实测未加载、它指的 `eod_cron.sh` 不存在）
+- [x] stockoptions API 三端点换源 quant.db + 合并总账 + `staleness` 信封
+- [x] 新增 `/api/desk-summary`（首屏三个数，**复用 `_twr_curve` 不写第三份实现**）
+- [x] iOS 首屏 + Live 数据源接通，**端到端跑通**：`quant.db → api.py → 模拟器`
+- [x] `rh_orders` 分页截断悬案 → **证伪**（缺的 12 单全是 cancelled、零现金）
+- [x] `~/Apps/ios` 两个 app 补登记 harness.yaml
+
+**真正剩下的**
+
+- [ ] **[P0] ⏳[external]** 06-18 那笔 $35,939.30 定性 —— **只能人工取一次**：
+      2026-06 月结单 PDF 的 Transfers / Cash Movement 段，或 App → Account → Transfers →
+      Transfer history 筛 06-18~06-19。本会话可见的 `mcp__robinhood-trading__*` 里
+      **没有任何 transfers/deposits/statements 接口**，自动化拿不到。
+      拿到后往 `reconcile_net_deposit.py` 的 `CONFIRMED_CORRECTIONS` 加一行即可幂等写库。
+- [ ] **[P0]** 把 `reconcile_net_deposit.py` 也挂进 `review_run.py`（新鲜度守卫已挂，对账守卫还没）
+- [ ] `rh_settlements` 补 `settlement_date` 列（现按 expiry 记账，产生成对反号假红）；
+      并回补 2026-07-10 之前的六月行 + `rh_equity_orders` 06-17 之前的行
+- [ ] `rh_history` 去重 + 补 7 个缺失交易日（06-10/06-17/06-29/07-06/07-08/07-30/08-04）
+- [ ] `review_audit.missing_for()` 的 ① 判据从「dump 文件存在」升成「文件存在**且**库已落进去」
+      （agent 已查清调用点，刻意没动：会连锁到 `review_auto.py` 的收敛循环）
+- [ ] API 上线 —— **不是「跑一下 deploy.sh」**：VPS 上零部署面，是 `/ship new` 四件全新
+      （subdomains.yaml + CF DNS/Origin Rule + authgate + nginx vhost + systemd unit）
+- [ ] Gate 凭证移植（真机装机才需要；模拟器阶段用 `-apiBase` 启动参数即可）
+- [ ] `/api/scenarios` `/api/roll-signals` 仍 503（pre-existing）；`/api/twr` 等仍读停更的旧 JSON
 
 ## 本轮已落盘的文件
 
