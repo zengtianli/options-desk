@@ -1,0 +1,33 @@
+name: OptionsDesk
+options:
+  bundleIdPrefix: cyou.tianli
+  deploymentTarget: { iOS: "18.0" }
+  createIntermediateGroups: true
+settings:
+  base:
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+targets:
+  OptionsDesk:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      # ⚠ 图标资产必须列在这儿。漏了的表现是**编译通过、装机通过、桌面白板**——
+      #   ASSETCATALOG_COMPILER_APPICON_NAME 指向一个不在工程里的 catalog,
+      #   actool 根本没被调起,全程零报错(2026-08-28 在 points-deck 实测踩到)。
+      - path: Resources/Assets.xcassets
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cyou.tianli.optionsdesk
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: 投资盘面
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+    scheme:
+      testTargets: []
+      configVariants: []
