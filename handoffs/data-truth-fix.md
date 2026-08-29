@@ -206,3 +206,88 @@ transfers/deposits/statements 接口）：2026-06 月结单 PDF 的 Transfers / 
 ```
 
 远端：`~/Apps/ios/options-desk` 已建私库 `github.com/zengtianli/options-desk` 并 push。
+
+---
+
+## 2026-08-29 第二轮 · 归日口径 + 上线（本轮把待办清零）
+
+### 一、发现：`rh_history` 的日期标签有 28% 是错的
+
+`asof` 不是收盘时刻，是「我那天什么时候跑的 dump」。全库 **156 行里 44 行**
+`substr(asof,1,10)` ≠ `quantlab.tcal.session_of(asof)`：
+
+```
+2026-08-05T00:15:54-07:00   → ET 03:15，还没开盘 → 属于 session 2026-08-04
+2026-07-10T22:28:54-07:00   → ET 次日 01:28，已收盘 → 仍属于 session 2026-07-10
+```
+
+**两条我先前写下的「事实」因此被推翻**：
+
+| 先前写的 | 实测 |
+|---|---|
+| 「缺 7 个交易日，⛔ 无解只能等」 | 真缺 **3 天**（06-17 / 06-26 / 07-07）。另 4 天（06-10 / 06-29 / 07-06 / 07-08 / 07-30 / 08-04 中的）有快照，只是被记到了次日名下 |
+| 「`qqq_close` 已修好（0/77 空洞）」 | 空洞是填上了，但**填进去的口径本身就错**：那一列记的是**拉数那一刻的报价**，不是收盘价。标签 `2026-07-31` 的三条快照分别是 683.55（= 07-30 收盘）/ 661.73（= 07-29 收盘）/ 683.29（某个盘中价），没有一个是 07-31 收盘 |
+
+### 二、修法（三个脚本，都幂等 + 备份 + 反向验证）
+
+| 脚本 | 做什么 | 结果 |
+|---|---|---|
+| `derive_session.py` | 物化 `rh_history.session` 列，判据 = `tcal.session_of`（**不另建第二套时区规则**） | 156 行全写，54 个 session |
+| `backfill_qqq_close.py --repair` | 按 session 从权威日线**整列重写** `qqq_close` | 校正 **25 行**，反向验证 0 行不符 |
+| `derive_settlement_date.py` | `rh_settlements` 补 `settlement_date`（T+1，日历同一份 SSOT） | 63 行全填，对账假红 **33 → 20** |
+
+消费端同步改读 `session`：`api.py` 的 `_DAILY_SQL` / `/api/meta`、`reconcile_net_deposit.py` 的日粒度。
+`fetch_data.py` 两个 writer 也改了，新 dump 自带这两列。
+
+### 三、首屏数字重算（全部来自 `/api/desk-summary` 实跑响应）
+
+| | 第一轮报的 | 修完口径 |
+|---|---|---|
+| 样本 | 50 天 / 49 链接 | **54 天 / 53 链接** |
+| TWR 累计 | +23.35% | **+22.45%** |
+| QQQ 同窗 | +1.88% | **+1.22%** |
+| 超额 | +21.48pp | **+21.23pp** |
+| 年化 | +194.3% ± 85pp | +161.9% ± 76pp → [85%, 238%] |
+| beta / 相关 | 0.83 / 0.57 | 0.85 / 0.59 |
+| Sharpe | 3.07 ± 2.29 | 2.92 ± 2.20（2SE 跨 0） |
+| **波动配平后超额** | +20.6pp | **+14.30pp** ← 我上一轮报高了 6.3pp |
+
+结论方向不变（超额扛得住风险调整、但是 regime-conditional 不可外推）。
+
+### 四、上线
+
+```
+https://desk.tianli.cyou            authgate 闸内 · noindex · 不进导航
+tlz-optionsdesk.service             uvicorn api:app @ 127.0.0.1:8642 · User=www-data
+/var/lib/tlz-optionsdesk/quant.db   库副本，由 review_run.py 顺带推（push_quant_db.py）
+```
+
+`/ship new` 的 `station_ship.py` **只做静态站**，所以拆开走：`ssot/dns/origin/access` 交给它，
+nginx vhost + systemd unit 按 VPS 上现成的 `edu-points` 范式手落（仍走 `nginx_ship`、仍登记 vhost 归属）。
+
+**端到端实跑验过（不是复述部署脚本的退出码）**：
+
+- 边缘未登录 → `302 → /_gate/login`（带 cf-ray + noindex），`/` 与 `/api/` 两条都验
+- 边缘带凭证 → `HTTP 200` + 正确 JSON（sessions 54 / +22.45% / +21.23pp）
+- 模拟器带钥匙串凭证实跑 → 渲染出真数（`shots/sim-214310.png`）
+- 模拟器无凭证 → `.gate` 错误条，点名 URL + 原因 + 下一步动作（`shots/sim-214209.png`）
+- `authgate/verify.sh` **33 通过 / 0 失败**
+
+### 五、顺手修的两个别处的真 bug
+
+1. **`cf_api.py origin-rules add`** 用 `expr.rfind('"')` 定位插入点，而那条规则尾部是
+   `... or starts_with(http.host, "app")` → 新 host 被插进了 `starts_with` 的参数里。
+   是 CF 报 400 才拦住的，**错误信息完全不提插错了位置**。改成定位 `http.host in {…}` 集合本身。
+2. **`authgate/verify.sh` 有两条长期恒红的过期期望**（fit `/coach/schedule` 2026-08-17
+   已摘掉 authgate-protect 且路径 404；sig `/` 已改成分层准入，`/` 本就是公开的抠图工作台）。
+   5 条红全由这两条产生 —— **一张常年红的表，人会整张不看**。已按线上 vhost 实证订正，
+   并把伪造 cookie 那节的探测目标换到真的由本闸保护的路径。
+
+### 六、这轮之后还剩什么（都不是「没做完」，是真的做不了）
+
+| 悬着的 | 为什么 |
+|---|---|
+| 06-18 那笔 $35,939.30 的定性 | MCP 没有 transfers/deposits/statements 接口（ToolSearch 查实）。需要用户拉 2026-06 月结单的 Transfers 段，或 App → Account → Transfers 看 06-18~06-19。拿到证据后往 `reconcile_net_deposit.CONFIRMED_CORRECTIONS` 加一条再 `--apply` |
+| 真缺的 3 个 session（06-17 / 06-26 / 07-07） | 没有历史 portfolio 接口可补 |
+| `net_deposit` 的 0 与 NULL 被合并 | `fetch_data.append_history` 里 `dep = ... or 0.0`，dump 没带这个字段时写 0 而不是 NULL —— 即「当天没有外部流水」被断言成事实。**本轮未改行为**（改了会让更多天变成「未知」，且多数天确实没流水），先记在这里 |
+| 装真机 | 需要用户把 iPhone 连上：`./install-to-iphone.sh && bash seed-gate.sh` |
