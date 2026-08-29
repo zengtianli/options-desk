@@ -187,6 +187,16 @@ private struct ExcessCard: View {
                 Text(pp(facts.excess))
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundStyle(facts.excess >= 0 ? Palette.gain : Palette.loss)
+                // 区间比「暂定值」有用:开放式的不确定没法决策,区间可以。
+                // 大字取下界(保守端),这里说清另一端在哪、以及区间从哪来。
+                if let r = facts.excessRange {
+                    Label("区间 \(pp(r.lowerBound)) ~ \(pp(r.upperBound))　"
+                          + "（2026-06-18 一笔 $35,939 已确认是现金流出，去向未定；大字取保守端）",
+                          systemImage: "arrow.left.and.right")
+                        .font(.caption)
+                        .foregroundStyle(Palette.ink.opacity(0.75))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack(spacing: 0) {
                     leg("我", facts.twrCumulative)
                     Divider().frame(height: 32)

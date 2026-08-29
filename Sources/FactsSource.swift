@@ -25,6 +25,7 @@ struct SampleFactsSource: FactsSource {
             twrCumulative: 0.2336_4080, qqqCumulative: 0.0187_6157,
             sampleDays: 53, accounts: ["••••6277", "••••3444"],
             benchmarkLagNote: "最新 1 个 session（2026-08-28）的 QQQ 收盘价尚未结算，已排除出比较窗口",
+            excessRange: 0.2148792...0.2533785,
             flowUnknownDays: 18))
     }
 }
@@ -57,6 +58,7 @@ struct LiveFactsSource: FactsSource {
         let accounts_merged: [String]?
         let is_stale: Bool?
         let benchmark_lag_note: String?
+        let excess_range: [Double]?
     }
 
     func load() async -> Result<DeskFacts, DeskError> {
@@ -125,6 +127,11 @@ struct LiveFactsSource: FactsSource {
                 sampleDays: p.sessions,
                 accounts: p.accounts_merged ?? [],
                 benchmarkLagNote: p.benchmark_lag_note,
+                // 服务端给的是 [下界, 上界]；两端相等或缺失就不显示区间。
+                excessRange: {
+                    guard let r = p.excess_range, r.count == 2, r[0] < r[1] else { return nil }
+                    return r[0]...r[1]
+                }(),
                 flowUnknownDays: p.flow_unknown_days))
         } catch {
             return .failure(.network(url: shown, underlying: Self.brief(error)))
