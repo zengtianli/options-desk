@@ -7,9 +7,11 @@ protocol FactsSource {
 /// 本地样本源。**数字是真的** —— 2026-08-29 直接抄 `/api/desk-summary` 的实跑响应,
 /// 这样第一屏截图里的排版就是上线后真实的量级,不会出现「样本三位数、真数据五位数」那种返工。
 ///
-/// ⚠ 这批数比第一版低,不是算错了,是**归日口径修好了**:快照不是收盘时刻拉的,
-/// 原来按 `asof[:10]` 归日有 28% 的行归错天 —— 少算 4 个交易日、且基准价整体错位一天。
-/// 改按 `session` 归日之后:样本 50 → 54 天,TWR 23.35% → 22.45%,QQQ 1.88% → 1.22%。
+/// ⚠ 这批数经过两轮订正,别拿旧版对照:
+/// ① 归日改按 `session`(快照不是收盘时刻拉的,`asof[:10]` 有 28% 的行归错天);
+/// ② 比较窗口两边截齐 —— 服务端曾把 TWR 算到 08-28 而基准只到 08-27,
+///    因为 08-28 的 QQQ 收盘价还没结算。两个不同窗口的数并排印成「同窗口」,差 0.66pp。
+/// 现值 = 53 个 session / 52 个链接,窗口 2026-06-09~2026-08-27,两条曲线同起同止。
 struct SampleFactsSource: FactsSource {
     var asofOverride: Date?
 
@@ -20,8 +22,10 @@ struct SampleFactsSource: FactsSource {
         let asof = asofOverride ?? Calendar(identifier: .gregorian).date(from: c)!
         return .success(DeskFacts(
             asof: asof, nlv: 1_354_906.14,
-            twrCumulative: 0.2244_5918, qqqCumulative: 0.0121_6394,
-            sampleDays: 54, accounts: ["••••6277", "••••3444"], flowUnknownDays: 18))
+            twrCumulative: 0.2336_4080, qqqCumulative: 0.0187_6157,
+            sampleDays: 53, accounts: ["••••6277", "••••3444"],
+            benchmarkLagNote: "最新 1 个 session（2026-08-28）的 QQQ 收盘价尚未结算，已排除出比较窗口",
+            flowUnknownDays: 18))
     }
 }
 
@@ -52,6 +56,7 @@ struct LiveFactsSource: FactsSource {
         let flow_unknown_days: Int
         let accounts_merged: [String]?
         let is_stale: Bool?
+        let benchmark_lag_note: String?
     }
 
     func load() async -> Result<DeskFacts, DeskError> {
@@ -119,6 +124,7 @@ struct LiveFactsSource: FactsSource {
                 twrCumulative: p.twr_cumulative, qqqCumulative: q,
                 sampleDays: p.sessions,
                 accounts: p.accounts_merged ?? [],
+                benchmarkLagNote: p.benchmark_lag_note,
                 flowUnknownDays: p.flow_unknown_days))
         } catch {
             return .failure(.network(url: shown, underlying: Self.brief(error)))

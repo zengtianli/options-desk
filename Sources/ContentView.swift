@@ -220,6 +220,11 @@ private struct FootnoteCard: View {
                     row("存疑", "\(facts.flowUnknownDays) 天 net_deposit 缺记录；已知悬案 2026-06-18 一笔 $35,939，"
                              + "内部划转还是提现未定 —— 定性为提现则累计收益更高，不更低")
                 }
+                // 收益率与基准必须同窗口。截掉了尾巴就得说出来，否则「样本 53 天」
+                // 配上「数据时间 08-28」看着像漏了一天。
+                if let note = facts.benchmarkLagNote {
+                    row("窗口", note)
+                }
             }
         }
     }
