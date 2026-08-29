@@ -222,13 +222,23 @@ private struct FootnoteCard: View {
         Card {
             VStack(alignment: .leading, spacing: 6) {
                 Text("口径").font(.subheadline.weight(.semibold))
-                row("账户", facts.accounts.joined(separator: " + ") + "（合并总账）")
+                // 2026-08-29：口径从「两户合并」收成单户 —— 700013444 已按用户钦定移出。
+                // 那个户 06-09 开、06-22 归零，整段生命都落在数据最脏的窗口里。
+                row("账户", facts.accounts.joined(separator: " + ")
+                          + (facts.accounts.count > 1 ? "（合并总账）" : "（单账户）"))
                 row("收益", "逐日链接 TWR，当日现金流计入期初基数")
                 row("基准", "QQQ 买入持有，同一窗口")
-                row("不含", "年化 / Sharpe —— 样本只有 \(facts.sampleDays) 天，误差带比数本身还宽")
+                // 这一行以前写「样本只有 N 天，所以不放年化」。序列补到 400 天之后
+                // 那个理由不成立了 —— 现在不放首屏是因为**首屏只放三个数**，
+                // 不是因为算不出来。算得出来，在风控页，带标准误。
+                row("不含", "年化 / Sharpe / 回撤 —— 都在「风控」页，那里同时印标准误和样本长度")
                 if !facts.flowComplete {
-                    row("存疑", "\(facts.flowUnknownDays) 天 net_deposit 缺记录；已知悬案 2026-06-18 一笔 $35,939，"
-                             + "内部划转还是提现未定 —— 定性为提现则累计收益更高，不更低")
+                    row("存疑", "\(facts.flowUnknownDays) 天 net_deposit 缺记录 —— "
+                             + "一笔没记的入金会被算成投资赚来的钱，且错得毫无痕迹")
+                } else {
+                    // 2026-08-29 起这条是绿的。值得占一行 —— 它是这个数能不能当结论的前提，
+                    // 而且它曾经**不成立**（六月的到期指派没进库，18 天的资金流因此算不出来）。
+                    row("资金流", "全窗口逐日已知（现金恒等式反算 + 对账守卫判红 0 组）")
                 }
                 // 收益率与基准必须同窗口。截掉了尾巴就得说出来，否则「样本 53 天」
                 // 配上「数据时间 08-28」看着像漏了一天。

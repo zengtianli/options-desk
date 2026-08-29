@@ -7,11 +7,15 @@ protocol FactsSource {
 /// 本地样本源。**数字是真的** —— 2026-08-29 直接抄 `/api/desk-summary` 的实跑响应,
 /// 这样第一屏截图里的排版就是上线后真实的量级,不会出现「样本三位数、真数据五位数」那种返工。
 ///
-/// ⚠ 这批数经过两轮订正,别拿旧版对照:
+/// ⚠ 这批数经过**四轮**订正,别拿旧版对照:
 /// ① 归日改按 `session`(快照不是收盘时刻拉的,`asof[:10]` 有 28% 的行归错天);
-/// ② 比较窗口两边截齐 —— 服务端曾把 TWR 算到 08-28 而基准只到 08-27,
-///    因为 08-28 的 QQQ 收盘价还没结算。两个不同窗口的数并排印成「同窗口」,差 0.66pp。
-/// 现值 = 53 个 session / 52 个链接,窗口 2026-06-09~2026-08-27,两条曲线同起同止。
+/// ② 比较窗口两边截齐(服务端曾把 TWR 算到 08-28 而基准只到 08-27,差 0.66pp);
+/// ③ 序列从 54 天补到 **400 天**(2025-01-02 起,legacy daily_nlv.csv + 整年订单流);
+/// ④ **2026-08-29 最要紧的一轮**:六月的到期指派补进库之后,原先当成「资金流未记录」
+///    的 18 天算出来了 —— 那 18 天里有 **+$13.4 万的净入金**被当成了投资赚来的钱。
+///    修正前 +46.48%、修正后 **+30.69%**,而 QQQ 同窗 +41.33% ——
+///    **方向都变了:不是跑赢 5 个点,是落后 10.6 个点。**
+///    口径同时收成单账户(700013444 按用户钦定移出)。
 struct SampleFactsSource: FactsSource {
     var asofOverride: Date?
 
@@ -21,12 +25,14 @@ struct SampleFactsSource: FactsSource {
         c.timeZone = TimeZone(identifier: "America/New_York")   // 见 ContentView.marketTime 的例外说明
         let asof = asofOverride ?? Calendar(identifier: .gregorian).date(from: c)!
         return .success(DeskFacts(
-            asof: asof, nlv: 1_354_906.14,
-            twrCumulative: 0.2336_4080, qqqCumulative: 0.0187_6157,
-            sampleDays: 53, accounts: ["••••6277", "••••3444"],
+            asof: asof, nlv: 1_354_906.08,
+            twrCumulative: 0.3068_5695, qqqCumulative: 0.4133_0380,
+            sampleDays: 400, accounts: ["••••6277"],
             benchmarkLagNote: "最新 1 个 session（2026-08-28）的 QQQ 收盘价尚未结算，已排除出比较窗口",
-            excessRange: 0.2148792...0.2533785,
-            flowUnknownDays: 18))
+            // 区间机制留着（服务端一旦又出现定性不明的资金流会重新给值），
+            // 但现在全窗口资金流逐日已知，所以是 nil —— 不是把不确定藏了，是它不成立了。
+            excessRange: nil,
+            flowUnknownDays: 0))
     }
 }
 
