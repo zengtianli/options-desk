@@ -64,6 +64,9 @@ enum DeskError: Error, Equatable {
     case http(url: String, status: Int, body: String)
     case decoding(url: String, field: String, detail: String)
     case empty(url: String)
+    /// 被访问闸拦下。**必须单独一档** —— 它长得像成功（302 之后是登录页的 200 HTML），
+    /// 混进 `.decoding` 就会显示成「服务返回的数据对不上契约」，把人引向服务端去查。
+    case gate(url: String, reason: String)
 
     var headline: String {
         switch self {
@@ -72,6 +75,7 @@ enum DeskError: Error, Equatable {
         case .http(_, let s, _):  return "服务返回 HTTP \(s)"
         case .decoding:           return "服务返回的数据对不上契约"
         case .empty:              return "服务返回了空序列"
+        case .gate:               return "被访问闸拦住了"
         }
     }
 
@@ -88,6 +92,8 @@ enum DeskError: Error, Equatable {
             return "\(url)\n字段 `\(field)`\n\(detail)"
         case .empty(let url):
             return "\(url)\n返回 0 行 —— 空集不当成 0 收益显示"
+        case .gate(let url, let reason):
+            return "\(url)\n\(reason)"
         }
     }
 
@@ -106,6 +112,8 @@ enum DeskError: Error, Equatable {
             return "服务端契约变了。对齐 `\(field)` 这个字段,别在客户端猜着容错。"
         case .empty:
             return "查 quant.db 的 rh_history 是不是空了 —— 空集报绿就是前身那种静默死法。"
+        case .gate:
+            return "把闸密码喂一次：Mac 上连着手机跑 `bash seed-gate.sh`（密码取自 macOS 钥匙串 tlz-gate，不进环境变量）。"
         }
     }
 }

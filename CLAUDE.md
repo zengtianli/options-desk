@@ -156,11 +156,49 @@ Sharpe 2.92 **± 2.20**（两倍标准误跨过 0，区间 [−1.48, 7.32]），
 - **两个账户合并成一个总账**（`5UK56277` + `700013444`）。「我的钱表现如何」本来就该是合并口径；
   分账户看是运维视角不是投资视角。
 
+## 线上（2026-08-29 上线）
+
+```
+https://desk.tianli.cyou          authgate 闸内 · noindex · 不进任何导航
+  /                               一页说明（/var/www/desk）
+  /api/desk-summary               首屏三个数（app 只吃这一个端点）
+```
+
+VPS 侧三件：`tlz-optionsdesk.service`（`uvicorn api:app` @ `127.0.0.1:8642`，User=www-data）·
+vhost SSOT `~/Dev/tools/configs/nginx/vps/desk.tianli.cyou`（改完走 `nginx_ship`，**禁在 VPS 上直接改**）·
+库副本 `/var/lib/tlz-optionsdesk/quant.db`。
+
+**数据怎么上去的**：`review_run.py`（写复盘必跑）跑完顺带调 `push_quant_db.py` 推库
+—— **不挂 LaunchAgent**，那正是前身的死因。推失败不拦复盘，只告警；
+另一道是 app 首屏那条陈旧度条，几小时内自己变色。两道指向同一件事。
+
+`/ship new` 的 `station_ship.py` **只做静态站**（rsync 一个含 index.html 的目录 + 静态 vhost），
+所以这次是拆开走的：`ssot/dns/origin/access` 交给它，nginx vhost 与 systemd unit 按 VPS 上
+现成的 `edu-points` 范式手落（仍走 `nginx_ship` 下发、仍登记 vhost 归属）。
+
+> 路上修了总部一个真 bug：`cf_api.py origin-rules add` 用 `expr.rfind('"')` 定位插入点，
+> 而那条规则的表达式尾部是 `... or starts_with(http.host, "app")` ——
+> 新 host 被插进了 `starts_with` 的参数里，`starts_with(http.host, "app" "desk.tianli.cyou")`。
+> 是 CF 报 400 才拦住的，**它的错误信息完全不提插错了位置**。已改成定位 `http.host in {…}` 集合本身。
+
 ## 凭证
 
 复用 blog-reader 那套（2026-08-28 验过，零手工）：`Gate.swift` + `seed-gate.sh`，
 密码存 **macOS 钥匙串**（`security -s tlz-gate`），装机时用 `-gatepw` 启动参数喂一次，
 app 验过写进 iOS 钥匙串。
+
+`Gate.swift` 从 blog-reader **移植不重写**（契约 6），只改 Keychain 的 service 标识。
+撞闸的判据是**最终 URL 落在 `/_gate/` 下**，不是状态码 —— URLSession 会跟着 302，
+到手的是登录页的 **200 HTML**，状态码分辨不出来；嗅 HTML 内容则是给页面文案建第二份判据，改个字就瞎。
+`DeskError` 为此单列 `.gate` 一档：混进 `.decoding` 会显示成「数据对不上契约」，把人引向服务端去查。
+
+## 选源（启动参数）
+
+| 参数 | 源 |
+|---|---|
+| （默认） | `https://desk.tianli.cyou` —— 装到手机上点开就是真数 |
+| `-apiBase <URL>` | 指别处，如本机调试 `-apiBase http://127.0.0.1:8799` |
+| `-sample` | 本地样本，不联网（截图/离线调试用） |
 
 > **密码禁进 `~/.personal_env`** —— 2026-08-28 实测 `XCBuildData` 会把构建时的完整环境
 > **连值一起**记进中间产物（当时那里躺着 68 个真实凭证的明文）。

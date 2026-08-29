@@ -1,7 +1,8 @@
 name: options-desk
 origin: own
-lifecycle: incubating       # 2026-08-28 立。UI 已写(4 个 Sources + 10 张模拟器截图,首屏与 Live
-                            # 数据源端到端跑通);**没装机、API 没上线**。装上并日常在用 → 改 active
+lifecycle: incubating       # 2026-08-28 立。2026-08-29 更新:API 已上线(desk.tianli.cyou,
+                            # authgate 闸内),app 默认指向它,模拟器带凭证实跑渲染出真数。
+                            # **仍是 incubating —— 还没装到真机上、还没日常在用。**装上并用起来 → active
 form: ios
 
 one_liner: 投资盘面 —— 随时一眼看到净值 / 累计收益 / 对 QQQ 的超额 / buffer / 票据梯子,数据来自每日复盘那条链
@@ -16,12 +17,15 @@ function: |
 key_scripts:
   - install-to-iphone.sh    # shim → 总部 SSOT
   - sim-run.sh              # shim → 总部 SSOT
+  - seed-gate.sh            # 把闸密码喂给手机一次(密码取自 macOS 钥匙串 tlz-gate,禁进环境变量)
   - make_icon.py            # 图标
 
 depends_on:
   - ~/investment/data/quant.db                                  # 数据真相(rh_history / rh_group_pnl / rh_*_positions)
   - ~/investment/options/robinhood/review_run.py                # 每日复盘引擎 + 同步挂载点
   - ~/Dev/stations/web-stack/services/stockoptions/api.py       # 只读 API(复用,不新建)
+  - https://desk.tianli.cyou                                     # 上线地址(authgate 闸内,2026-08-29)
+  - ~/investment/options/robinhood/push_quant_db.py             # 推库上线(挂在 review_run.py,不挂定时器)
   - ~/Dev/tools/dev/lib/tools/macapp/ios/                       # 装机/设备探测/Xcode 挑选 SSOT
 
 notes: |

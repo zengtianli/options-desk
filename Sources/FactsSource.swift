@@ -32,7 +32,14 @@ struct SampleFactsSource: FactsSource {
 /// 这里只解码 + 呈现。
 struct LiveFactsSource: FactsSource {
     let baseURL: String
-    var session: URLSession = .shared
+    /// **不用 `.shared`** —— 需要一个自己的 cookie jar 装闸的会话 cookie。
+    var session: URLSession = {
+        let c = URLSessionConfiguration.default
+        c.httpCookieStorage = .shared          // 域 .tianli.cyou，跨启动保留
+        c.httpShouldSetCookies = true
+        c.timeoutIntervalForRequest = 20
+        return URLSession(configuration: c)
+    }()
 
     /// 服务端契约。字段名对不上就报 `.decoding` 并**点名是哪个字段**,不容错、不填默认值 ——
     /// 容错会让契约漂移变成一个静默显示错数的 app。
@@ -52,8 +59,32 @@ struct LiveFactsSource: FactsSource {
             return .failure(.notConfigured(baseURL: baseURL))
         }
         let shown = url.absoluteString
+        // 装机时 `seed-gate.sh` 用 `-gatepw` 喂进来的密码 —— **验过才写钥匙串**。
+        // 没喂过就立刻返回，代价为零，所以放在这里而不是 App 启动路径上分叉。
+        await Gate.seedFromLaunchArg(session: session)
         do {
-            let (data, resp) = try await session.data(from: url)
+            var (data, resp) = try await session.data(from: url)
+
+            // 撞闸：URLSession 会跟着 302 走到登录页，到手是**登录页的 200 HTML**，
+            // 状态码分辨不出来 —— 判据是最终 URL 落在 `/_gate/` 下（同 Gate.blocked）。
+            // 有密码就换一次会话再重试**一次**；没密码就明说要喂密码，别去查服务端。
+            if Gate.blocked(resp) {
+                guard let pw = Gate.password else {
+                    return .failure(.gate(url: shown,
+                        reason: "这台设备还没有闸凭证（iOS 钥匙串里没有密码）"))
+                }
+                do { try await Gate.login(password: pw, session: session) }
+                catch {
+                    return .failure(.gate(url: shown,
+                        reason: (error as? Gate.Failure)?.message ?? "登录失败"))
+                }
+                (data, resp) = try await session.data(from: url)
+                if Gate.blocked(resp) {
+                    return .failure(.gate(url: shown,
+                        reason: "拿密码换了会话之后仍被拦 —— 密码可能已经改了"))
+                }
+            }
+
             guard let http = resp as? HTTPURLResponse else {
                 return .failure(.network(url: shown, underlying: "响应不是 HTTP"))
             }
@@ -113,13 +144,20 @@ struct LiveFactsSource: FactsSource {
     }()
 }
 
-/// 启动参数选源:`-apiBase http://127.0.0.1:8621` 指线上源,不给就用样本源。
-/// 这样「接上真 API 跑一遍」不需要改代码重编,也不用把 base URL 写死进包里。
+/// 选源。**默认就是线上** —— 2026-08-29 起 `desk.tianli.cyou` 已上线，
+/// 装到手机上点开就该看见真数;样本源退回成截图/离线调试用的显式档。
+///
+///   （默认）        → https://desk.tianli.cyou  ，闸内，凭证走 Gate
+///   -apiBase <URL>  → 指别处（本机 uvicorn 调试:`-apiBase http://127.0.0.1:8799`）
+///   -sample         → 本地样本，不联网
 enum FactsSourceFactory {
+    static let productionBase = "https://desk.tianli.cyou"
+
     static func make(_ args: [String] = ProcessInfo.processInfo.arguments) -> FactsSource {
+        if args.contains("-sample") { return SampleFactsSource() }
         if let i = args.firstIndex(of: "-apiBase"), i + 1 < args.count {
             return LiveFactsSource(baseURL: args[i + 1])
         }
-        return SampleFactsSource()
+        return LiveFactsSource(baseURL: productionBase)
     }
 }
