@@ -505,3 +505,35 @@ $ detect_device.py  →  rc=1（挑不出可用真机）
 这一步是物理在场，不是我能代劳的：手机连上后跑
 `./install-to-iphone.sh && bash seed-gate.sh` 即可（app 侧代码与凭证链路都已就绪，
 模拟器上带凭证跑通过真数）。
+
+### 三、把 06-18 的不确定性做成产品里的有界区间（本轮新增）
+
+既然「它是现金流出」已经确定、只剩去向未定，而去向只有两种可能且**两端都算得出来**，
+就不该让首屏挂一个开放式「暂定值」等月结单。`/api/desk-summary` 新增：
+
+```
+flow_scenarios     [{internal_transfer, +21.49pp}, {withdrawal_2026_06_18, +25.34pp}]
+excess_range       [0.214879, 0.253379]
+excess_range_note  两端分别按「内部划转」与「外部提现」计；真值必落在中间
+```
+
+app 首屏超额卡片直接印 `区间 +21.49pp ~ +25.34pp`，大字取**下界**（保守端）。
+
+**区间可以拿来决策，开放式的「不确定」不行。** 月结单到手后：删掉 `api.py` 里
+`desk_summary` 的 `OPEN_FLOWS` 那段，并往 `reconcile_net_deposit.CONFIRMED_CORRECTIONS`
+加**两条**（两个账户各一条——只写一边会让合并总账变成断言外部提现）。
+
+### 四、真机这条是真的只能等
+
+不是读状态得出的结论，是**真发了连接请求**：
+
+```
+$ xcrun devicectl device info details --device 92492D0F-…
+  • Authentication Type: manualPairing
+  • Device State: unavailable          ← 隧道起不来
+  • Last Connection Date: Aug 28, 2026 at 21:30
+  • Pairing State: paired
+```
+
+已配对、但设备不可达。app 侧代码与凭证链路都已就绪（模拟器带真凭证跑出过真数），
+手机连上跑 `./install-to-iphone.sh && bash seed-gate.sh` 即可。
