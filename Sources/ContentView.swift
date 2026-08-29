@@ -33,7 +33,7 @@ struct ContentView: View {
                     } else if let e = error {
                         ErrorCard(error: e)
                     } else if let f = facts {
-                        FreshnessBanner(freshness: .of(f.stalenessDays(now: now)), asof: f.asof)
+                        FreshnessBanner(freshness: f.freshness(now: now), asof: f.asof)
                         HeroCard(facts: f)
                         ExcessCard(facts: f)
                         RiskCard(risk: f.risk, error: f.riskError)
@@ -140,9 +140,13 @@ struct FreshnessBanner: View {
     }
     private var title: String {
         switch freshness {
-        case .fresh:          return "数据是新的"
-        case .stale(let d):   return "数据落后 \(d) 天 —— 同步可能断了"
-        case .dead(let d):    return "数据落后 \(d) 天 —— 这条链大概率已经死了"
+        case .fresh:
+            return "数据是新的"
+        case .stale(let n, let u):
+            // 「下一步做什么」得写在提示里 —— 只说「旧了」的提示等于没提示。
+            return "数据落后 \(n) \(u.label) —— 日常链可能断了（本机 launchd + VPS 定时器）"
+        case .dead(let n, let u):
+            return "数据落后 \(n) \(u.label) —— 这条链大概率已经死了，去看 ~/Library/Logs/tlz-optionsdesk-daily.log"
         }
     }
 }

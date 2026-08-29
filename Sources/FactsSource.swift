@@ -33,6 +33,7 @@ struct SampleFactsSource: FactsSource {
             // 但现在全窗口资金流逐日已知，所以是 nil —— 不是把不确定藏了，是它不成立了。
             excessRange: nil,
             flowUnknownDays: 0,
+            stalenessWeekdays: 0,
             // 同样是**实跑抄下来的真数**（/api/desk-summary 的 risk 块，2026-08-29）。
             // 编一组好看的会让截图上的排版和上线后对不上 —— 这个 app 反复栽的就是那个。
             risk: DeskRisk(netDeltaRatio: 0.7697, netDeltaNotional: 1_042_902.08,
@@ -65,6 +66,8 @@ struct LiveFactsSource: FactsSource {
         let flow_unknown_days: Int
         let accounts_merged: [String]?
         let is_stale: Bool?
+        /// 交易日陈旧度（服务端 _staleness 算，跳过周末）。可为 null。
+        let staleness_weekdays: Int?
         let benchmark_lag_note: String?
         let excess_range: [Double]?
         /// 整块可能是 null（持仓快照坏了 / 样本不够算滚动波动）。
@@ -120,6 +123,7 @@ struct LiveFactsSource: FactsSource {
                     return r[0]...r[1]
                 }(),
                 flowUnknownDays: p.flow_unknown_days,
+                stalenessWeekdays: p.staleness_weekdays,
                 risk: p.risk.map {
                     DeskRisk(netDeltaRatio: $0.net_delta_ratio,
                              netDeltaNotional: $0.net_delta_notional,

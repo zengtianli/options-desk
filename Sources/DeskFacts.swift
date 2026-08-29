@@ -41,6 +41,14 @@ struct DeskFacts: Equatable {
     /// 所以现在这个累计收益只能叫**暂定值**,不能叫结论。
     let flowUnknownDays: Int
 
+    /// 服务端算的**交易日**陈旧度（跳过周末）。nil = 服务端没给（旧版本或 asof 解析不了）。
+    ///
+    /// **为什么不在客户端按自然日算**：周六看盘，asof 是周五收盘 —— 自然日差 1，
+    /// 交易日差 0。按自然日算，每个周末都会报一次「数据落后」，
+    /// 而**天天喊狼来了的警报，等于没有警报**。前身 cc-options 死于三个月没人报警，
+    /// 这条提示是补那个洞的；补的方式不能是让它变成噪音。
+    let stalenessWeekdays: Int?
+
     /// 现在的风险:暴露 + 波动。**null = 算不出来,不是「没有风险」** ——
     /// 算不出来的原因在 `riskError` 里,界面要把它印出来而不是让这块消失。
     let risk: DeskRisk?
@@ -54,8 +62,15 @@ struct DeskFacts: Equatable {
     var excess: Double { twrCumulative - qqqCumulative }
 
     /// 数据落后了几天(自然日)。用注入的 now,避免视图里直接摸系统时钟不好测。
+    /// **只作 `stalenessWeekdays` 缺席时的兜底** —— 判据优先用交易日。
     func stalenessDays(now: Date) -> Int {
         max(0, Calendar.current.dateComponents([.day], from: asof, to: now).day ?? 0)
+    }
+
+    /// 这一屏该显示哪一档新鲜度。判据只此一处，五个页面都不再各算各的。
+    func freshness(now: Date) -> Freshness {
+        if let w = stalenessWeekdays { return .ofTradingDays(w) }
+        return .ofCalendarDays(stalenessDays(now: now))
     }
 }
 
@@ -109,15 +124,34 @@ struct DeskRisk: Equatable {
 /// 陈旧程度分档。前身 cc-options 的死法是**安静地显示一个旧数字**三个月没人发现,
 /// 所以这里没有「安静」这一档:超过阈值就必须在界面上刺眼。
 enum Freshness {
-    case fresh          // 当日/隔日
-    case stale(Int)     // 落后了,但还能看
-    case dead(Int)      // 链子大概率断了
+    case fresh
+    case stale(Int, unit: Unit)     // 落后了,但还能看
+    case dead(Int, unit: Unit)      // 链子大概率断了
 
-    static func of(_ days: Int) -> Freshness {
+    enum Unit { case tradingDay, calendarDay
+        var label: String { self == .tradingDay ? "个交易日" : "天" }
+    }
+
+    /// **交易日档（正路）。** 阈值是算过的，不是随手定的：
+    ///   0 = asof 就是最后一个已收盘 session —— 新的；
+    ///   1 = 正常的盘中态。周一早上 asof 还是周五收盘，这时就是 1，
+    ///       今天还没收盘，报警是错的；
+    ///   2 = **整整错过了一个 session** —— 这才是链条断了的最早信号；
+    ///   ≥4 = 一周左右没动，基本可以断定死了。
+    static func ofTradingDays(_ n: Int) -> Freshness {
+        switch n {
+        case ...1:  return .fresh
+        case 2...3: return .stale(n, unit: .tradingDay)
+        default:    return .dead(n, unit: .tradingDay)
+        }
+    }
+
+    /// 自然日兜底档（服务端没给交易日数时）。阈值放宽是因为它天生会把周末算进去。
+    static func ofCalendarDays(_ days: Int) -> Freshness {
         switch days {
         case ...2:  return .fresh
-        case 3...7: return .stale(days)
-        default:    return .dead(days)
+        case 3...7: return .stale(days, unit: .calendarDay)
+        default:    return .dead(days, unit: .calendarDay)
         }
     }
 

@@ -351,6 +351,42 @@ vhost SSOT `~/Dev/tools/configs/nginx/vps/desk.tianli.cyou`（改完走 `nginx_s
 > 新 host 被插进了 `starts_with` 的参数里，`starts_with(http.host, "app" "desk.tianli.cyou")`。
 > 是 CF 报 400 才拦住的，**它的错误信息完全不提插错了位置**。已改成定位 `http.host in {…}` 集合本身。
 
+## 每日自动更新（2026-08-29 立 —— 「app 得对着服务器实时更新」）
+
+用户看到 08-28 没出结果。**根因不是 app，也不是账户数据缺**：08-28 的净值早在库里，
+缺的只有那天的 QQQ/SPY/TQQQ 收盘价 —— dump 是收盘那一刻拉的，那时收盘 bar 还没结算，
+回填器**拒绝**写未结算的价（这条规矩是对的），然后再没有任何东西回来补这一天。**每天都会复发。**
+
+关键分界：**这两半的自动化难度完全不同**，混着谈就会得出「做不了」的错误结论。
+
+| 数据 | 在哪自动 | 触发 | 凭证 |
+|---|---|---|---|
+| QQQ/SPY/TQQQ 收盘价 | **VPS**（公开行情） | `tlz-optionsdesk-bench.timer` 每小时 | 不需要 |
+| 账户净值/持仓/成交 | **本机 Mac** | `com.tianli.optionsdesk-daily` 每小时 | 券商凭证，**不上 VPS** |
+
+**基准那一半刻意不依赖 Mac 醒着** —— 挂在「Mac 醒着」上正是前身 cc-options 的死法。
+
+```
+VPS   bench_close_sync.py ──→ /var/lib/tlz-optionsdesk/bench.db   （单独文件！见下）
+Mac   daily_auto.sh ─→ review_auto.py（缺件才跑）─→ push_quant_db.py ─→ VPS quant.db
+API   _DAILY_SQL:  COALESCE(rh_history 的值, bench.db 的值)        ← 次序不能反
+```
+
+- **为什么 bench.db 是单独文件**：`push_quant_db.py` 是 **rsync 整个 quant.db**。往 VPS 上那个库里写任何东西，下一次推库都会整文件覆盖掉，而且**没有痕迹**（表还在、数没了）。
+- **为什么 COALESCE 是「rh_history 优先」**：反过来的话，一次换源就会**改掉已经发布过的历史数字**。bench.db 只准往上**加** rh_history 缺的 session。四向实测过（挖洞库+bench → 兜住 401 天；挖洞库无 bench → 退回 400 天）。
+- **换源前逐日验过**：Yahoo 日线 vs 库里 401 个 session × 3 个标的 = **1,203 次比较，0 处不符**（最大相对差 5.6e-8，纯浮点表示）；验证器反向测过（拿 SPY 的价对 QQQ 的列 → 判红 401 条）。
+- **两个定时器都不挑「收盘后 N 分钟」**：挑时刻要跟 DST、半日市、机器睡没睡着较劲。两条链都幂等（当天那根 bar 一律不写；八件套已齐时 `review_auto.py` 是**真 no-op**，实测直接打印「无需跑」不起 claude 会话），所以多跑无代价、少跑下一小时补，机器睡醒第一次触发就补上。
+
+> ⚠ **这两条链都可以死，而它们死掉这件事必须在首屏喊出来。** 守卫 = 陈旧度条，
+> 2026-08-29 起按**交易日**算（服务端 `staleness_weekdays`）：0~1 新、2~3 报警、≥4 判死。
+> 原来按自然日算，**每个周末都会假报警一次** —— 天天喊狼来了的警报等于没有警报，
+> 而这条提示存在的全部理由就是补前身那个「三个月没人报警」的洞。
+> 另一道：`/api/health` 的 `bench_db` 块（挂没挂上、多少行、最新 session、上次取数时间）。
+
+文件：`~/Dev/stations/web-stack/services/stockoptions/{bench_close_sync.py,deploy/*.service,*.timer}` ·
+`~/investment/options/robinhood/{daily_auto.sh,deploy/com.tianli.optionsdesk-daily.plist}` ·
+日志 `~/Library/Logs/tlz-optionsdesk-daily.log` + 心跳 `.heartbeat.json`
+
 ## 凭证
 
 复用 blog-reader 那套（2026-08-28 验过，零手工）：`Gate.swift` + `seed-gate.sh`，
