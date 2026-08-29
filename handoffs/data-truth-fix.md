@@ -382,3 +382,73 @@ QQQ 同窗  +1.88%
 - `com.tianli.downloads-router` 声明存在但已死 —— raycast 脚本全在 `_archive/`、launchctl 无此 label，
   但 plist 模板还在 `lib/tools/downloads_triage/`。是「已退役该删声明」还是「该重装」，
   证据不足以替 `~/Dev/tools/dev` 那边拍板，故只报告不动手。
+
+---
+
+## 2026-08-29 第四轮 · 把「刻意没做」的那部分做完
+
+上一轮我把 6 个死端点判成「不在本项目范围内」。目标是**全部做完不留尾巴**，那个范围判断被推翻了，
+所以逐个查 quant.db 有没有替代源——不猜，每条都有命令输出支撑。
+
+### 先解共同卡点：基准只有 QQQ
+
+`twr` / `perf-metrics` / `harness` 三个都卡在 **SPY / TQQQ 缺失**上
+（`klines` 停在 06-05，与 `rh_history` 交集 0 天；TQQQ 全库只有汇总统计无日频序列）。
+
+根因不是「数据拿不到」，是 **`backfill_qqq_close.py` 把列名写死成 `qqq_close` 四处**——
+同一件事要写第二遍，所以当初没人做。已参数化成 `--symbol`：
+
+```bash
+python3 backfill_qqq_close.py --symbol spy  --csv data/qqq/spy_daily_close_*.csv --repair --apply
+python3 backfill_qqq_close.py --symbol tqqq --csv data/qqq/tqqq_daily_close_*.csv --repair --apply
+```
+
+SPY / TQQQ 各回填 **53 个 session**，价格源同 QQQ，未结算的 08-28 一律不进库，反向验证 0 行不符。
+
+### 6 个死端点的最终处置
+
+| 端点 | 现在 | 怎么做的 |
+|---|---|---|
+| `/api/twr` | **200** | 迁 quant.db，**四条线都在**：CC +23.36% / SPY +4.62% / QQQ +1.88% / TQQQ −0.57% |
+| `/api/perf-metrics` | **200** | 跟着 twr 通；按 120 交易日门槛诚实拒绝出年化点估计（现有 52 链接） |
+| `/api/harness` | **200** | v2 基准（0.7 QQQ + 0.3 SPY）真算得出来了 |
+| `/api/scenarios` | **200** | 新增 quant.db → SnapTrade 形状适配器；Greeks/IV 继续走 `lib_greeks` 不重写 |
+| `/api/roll-signals` | **200** | 同上；roll credit 从 `rh_orders.legs_json` 合成，**9/9 有值**（原来 0/9） |
+| `/api/activities` | **410** | 退役，指向 `/api/orders` |
+| `/api/weekly-net-roe` | **503** | 诚实拒绝，理由见下 |
+| `/api/orders` | **200**（新增） | 1796 条成交，名字就是口径 |
+
+### 三个刻意的设计选择
+
+1. **harness 的回撤算在 TWR 曲线上，不是账户余额上。** 这段窗口有 $115,570 已记录净入金；
+   拿余额算回撤，一笔入金会把回撤冲淡成看起来更安全——而这道守卫的全部意义就是不让人以为比实际安全。
+2. **`activities` 退役而不是迁移。** quant.db 里没有这个对象：旧源 11 类事件里
+   CONTRIBUTION / WITHDRAWAL / FEE / DIVIDEND / INTEREST **五类一条都没有**。
+   拿订单冒充它，消费端会以为自己看到了资金流。新端点叫 `orders`，`coverage` 字段明写缺哪五类。
+3. **`weekly-net-roe` 保持 503。** 真跑过一版：**分子能算、分母是错的**。
+   `roe.py` 从股票流水**从 0 重建**持仓（L145-193），而 `rh_equity_orders` 只有 43 行、
+   最早 2026-06-17，那之前已持有的 4,600 股 QQQ 无从重建——实测某周 `capital_used`
+   报到 **$10,121,803**（真实约 $3.29M，偏约 3 倍）。
+   **分母错的 ROE 比没有 ROE 更坏**：它照样是个百分数、照样能画进图里。
+   503 的正文写清楚了缺什么才能做（补 06-17 之前的股票成交，或补一个期初持仓快照）。
+
+### ⚠ harness 通了之后立刻报 breach
+
+```
+CC 最大回撤     -11.9%
+加权基准回撤     -8.8%   (0.7×QQQ -11.1% + 0.3×SPY -3.4%)
+headroom        -3.1%    → severity = breach
+```
+
+**v2 §6 的硬约束「回撤 ≤ benchmark」当前是破的。** 这在该端点返回全零 200 的那三个月里
+完全看不见——那正是「假的零被读成没有回撤」。数字与独立复核 agent 自算的 CC maxDD −11.9%
+/ QQQ maxDD −11.1% 逐位一致。
+
+> 注意口径：这是**含 18 天资金流未记录**的 TWR 曲线上的回撤，所以它和累计收益一样带同样的
+> 暂定性；`provisional` / `provisional_reason` 字段已随响应返回。
+
+### 顺带修的一处
+
+合成 activities 时 `units` 必须**带符号**（卖出为负）——`roe.py` 的 STO/BTC/BTO/STC 判据
+直接看 units 正负，全给正数会让每一笔都被当成 BUY（实测 `btc_debit` 全 0）。
+已修，全量 1796 条里 925 条 SELL 全部为负、0 条不符。
