@@ -1,6 +1,7 @@
 name: options-desk
 origin: own
-lifecycle: incubating       # 2026-08-28 立;还没写 UI、没装机。装上并日常在用 → 改 active
+lifecycle: incubating       # 2026-08-28 立。UI 已写(4 个 Sources + 10 张模拟器截图,首屏与 Live
+                            # 数据源端到端跑通);**没装机、API 没上线**。装上并日常在用 → 改 active
 form: ios
 
 one_liner: 投资盘面 —— 随时一眼看到净值 / 累计收益 / 对 QQQ 的超额 / buffer / 票据梯子,数据来自每日复盘那条链
