@@ -37,15 +37,6 @@ struct SampleFactsSource: FactsSource {
 /// 这里只解码 + 呈现。
 struct LiveFactsSource: FactsSource {
     let baseURL: String
-    /// **不用 `.shared`** —— 需要一个自己的 cookie jar 装闸的会话 cookie。
-    var session: URLSession = {
-        let c = URLSessionConfiguration.default
-        c.httpCookieStorage = .shared          // 域 .tianli.cyou，跨启动保留
-        c.httpShouldSetCookies = true
-        c.timeoutIntervalForRequest = 20
-        return URLSession(configuration: c)
-    }()
-
     /// 服务端契约。字段名对不上就报 `.decoding` 并**点名是哪个字段**,不容错、不填默认值 ——
     /// 容错会让契约漂移变成一个静默显示错数的 app。
     private struct Payload: Decodable {
@@ -62,55 +53,12 @@ struct LiveFactsSource: FactsSource {
     }
 
     func load() async -> Result<DeskFacts, DeskError> {
-        guard !baseURL.isEmpty, let url = URL(string: baseURL + "/api/desk-summary") else {
-            return .failure(.notConfigured(baseURL: baseURL))
-        }
-        let shown = url.absoluteString
-        // 装机时 `seed-gate.sh` 用 `-gatepw` 喂进来的密码 —— **验过才写钥匙串**。
-        // 没喂过就立刻返回，代价为零，所以放在这里而不是 App 启动路径上分叉。
-        await Gate.seedFromLaunchArg(session: session)
-        do {
-            var (data, resp) = try await session.data(from: url)
-
-            // 撞闸：URLSession 会跟着 302 走到登录页，到手是**登录页的 200 HTML**，
-            // 状态码分辨不出来 —— 判据是最终 URL 落在 `/_gate/` 下（同 Gate.blocked）。
-            // 有密码就换一次会话再重试**一次**；没密码就明说要喂密码，别去查服务端。
-            if Gate.blocked(resp) {
-                guard let pw = Gate.password else {
-                    return .failure(.gate(url: shown,
-                        reason: "这台设备还没有闸凭证（iOS 钥匙串里没有密码）"))
-                }
-                do { try await Gate.login(password: pw, session: session) }
-                catch {
-                    return .failure(.gate(url: shown,
-                        reason: (error as? Gate.Failure)?.message ?? "登录失败"))
-                }
-                (data, resp) = try await session.data(from: url)
-                if Gate.blocked(resp) {
-                    return .failure(.gate(url: shown,
-                        reason: "拿密码换了会话之后仍被拦 —— 密码可能已经改了"))
-                }
-            }
-
-            guard let http = resp as? HTTPURLResponse else {
-                return .failure(.network(url: shown, underlying: "响应不是 HTTP"))
-            }
-            guard http.statusCode == 200 else {
-                return .failure(.http(url: shown, status: http.statusCode,
-                                      body: String(data: data, encoding: .utf8) ?? "<非文本>"))
-            }
-            let p: Payload
-            do { p = try JSONDecoder().decode(Payload.self, from: data) }
-            catch let DecodingError.keyNotFound(key, ctx) {
-                return .failure(.decoding(url: shown, field: key.stringValue, detail: ctx.debugDescription))
-            }
-            catch let DecodingError.typeMismatch(_, ctx) {
-                return .failure(.decoding(url: shown,
-                                          field: ctx.codingPath.map(\.stringValue).joined(separator: "."),
-                                          detail: ctx.debugDescription))
-            }
-            catch { return .failure(.decoding(url: shown, field: "(整个响应体)", detail: "\(error)")) }
-
+        guard !baseURL.isEmpty else { return .failure(.notConfigured(baseURL: baseURL)) }
+        let shown = baseURL + "/api/desk-summary"
+        // 取数与闸(撞闸 → 换会话 → 重试一次)全在 DeskAPI 里 —— 五个页面共用同一份判据。
+        switch await DeskAPI(base: baseURL).get("/api/desk-summary", as: Payload.self) {
+        case .failure(let e): return .failure(e)
+        case .success(let p):
             guard p.sessions > 0 else { return .failure(.empty(url: shown)) }
             guard let q = p.qqq_cumulative else {
                 // 超额是首屏最重要那栏。基准算不出来就说清楚,别显示一个没有基准的孤零零收益率。
@@ -133,8 +81,6 @@ struct LiveFactsSource: FactsSource {
                     return r[0]...r[1]
                 }(),
                 flowUnknownDays: p.flow_unknown_days))
-        } catch {
-            return .failure(.network(url: shown, underlying: Self.brief(error)))
         }
     }
 
@@ -168,9 +114,17 @@ enum FactsSourceFactory {
 
     static func make(_ args: [String] = ProcessInfo.processInfo.arguments) -> FactsSource {
         if args.contains("-sample") { return SampleFactsSource() }
-        if let i = args.firstIndex(of: "-apiBase"), i + 1 < args.count {
-            return LiveFactsSource(baseURL: args[i + 1])
-        }
-        return LiveFactsSource(baseURL: productionBase)
+        return LiveFactsSource(baseURL: resolvedBase(args))
     }
+
+    /// 别的页面(日志/持仓/曲线/风控)也要知道指向哪 —— 解析只此一处,
+    /// 免得出现「首屏指线上、别的页指默认」这种一半一半的错。
+    static func resolvedBase(_ args: [String] = ProcessInfo.processInfo.arguments) -> String {
+        if let i = args.firstIndex(of: "-apiBase"), i + 1 < args.count { return args[i + 1] }
+        return productionBase
+    }
+
+    /// 样本档只有首屏有真样本;别的页面据此明说「本页要联网」,
+    /// 而不是转圈到超时(那看起来像服务端坏了)。
+    static var isSample: Bool { ProcessInfo.processInfo.arguments.contains("-sample") }
 }

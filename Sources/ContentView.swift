@@ -77,7 +77,7 @@ enum Palette {
     static let ink    = Color(red: 0.11, green: 0.12, blue: 0.14)
 }
 
-private struct Card<Content: View>: View {
+struct Card<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         content
@@ -90,7 +90,7 @@ private struct Card<Content: View>: View {
 
 /// 陈旧提示。前身 cc-options 死于「安静地显示一个旧数字」三个月没人发现,
 /// 所以这条在数据新鲜时也**不隐藏**,只是不报警 —— 让人习惯它在哪,坏的那天才会注意到它变色。
-private struct FreshnessBanner: View {
+struct FreshnessBanner: View {
     let freshness: Freshness
     let asof: Date
 
@@ -248,7 +248,7 @@ private struct FootnoteCard: View {
 
 /// 错误呈现。**三段式:出了什么事 / 具体是什么 / 下一步做什么。**
 /// 姊妹 app 那条只有一句「解析失败」的错误条是反面教材:既不像错误,也指不出方向。
-private struct ErrorCard: View {
+struct ErrorCard: View {
     let error: DeskError
     var body: some View {
         Card {
@@ -268,9 +268,9 @@ private struct ErrorCard: View {
 }
 
 // ── 格式化 ────────────────────────────────────────────────────────────────
-private func pct(_ v: Double) -> String { String(format: "%+.2f%%", v * 100) }
-private func pp(_ v: Double)  -> String { String(format: "%+.2fpp", v * 100) }
-private func usd(_ v: Double) -> String {
+func pct(_ v: Double) -> String { String(format: "%+.2f%%", v * 100) }
+func pp(_ v: Double)  -> String { String(format: "%+.2fpp", v * 100) }
+func usd(_ v: Double) -> String {
     let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = "USD"
     f.maximumFractionDigits = 0
     return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
