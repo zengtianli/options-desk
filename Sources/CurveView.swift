@@ -164,16 +164,9 @@ struct CurveView: View {
         return nil
     }
 
-    /// 交易所日历上的日子 → Date。x 轴必须是真日期,
-    /// 拿字符串当类目轴会把 50 多个标签糊成一条黑线(实测)。
-    private static let ymd: DateFormatter = {
-        let f = DateFormatter()
-        f.calendar = Calendar(identifier: .gregorian)
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "America/New_York")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
+    /// 交易所日历上的日子 → Date。**共享那一份**(Loader.swift 的 `exchangeYMD`),
+    /// 风控页的波动趋势图也用它 —— 各建一个就是两处会漂的时区判据。
+    private static var ymd: DateFormatter { exchangeYMD }
 
     /// 画的是**指数值**(锚日=100),跟博客那张图一样 —— 这样「领先 N 点」就是两条线的垂直距离,
     /// 不用读者自己去做减法。

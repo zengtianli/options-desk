@@ -41,6 +41,12 @@ struct DeskFacts: Equatable {
     /// 所以现在这个累计收益只能叫**暂定值**,不能叫结论。
     let flowUnknownDays: Int
 
+    /// 现在的风险:暴露 + 波动。**null = 算不出来,不是「没有风险」** ——
+    /// 算不出来的原因在 `riskError` 里,界面要把它印出来而不是让这块消失。
+    let risk: DeskRisk?
+    /// 风险块算不出来时的原因（服务端 `risk_error` 原文）。
+    let riskError: String?
+
     /// 现金流完整吗。不完整时首屏那个大字必须自带保留。
     var flowComplete: Bool { flowUnknownDays == 0 }
 
@@ -50,6 +56,53 @@ struct DeskFacts: Equatable {
     /// 数据落后了几天(自然日)。用注入的 now,避免视图里直接摸系统时钟不好测。
     func stalenessDays(now: Date) -> Int {
         max(0, Calendar.current.dateComponents([.day], from: asof, to: now).day ?? 0)
+    }
+}
+
+/// 现在的风险 —— 首屏第三块。
+///
+/// **为什么它该在首屏。** 2026-08-29 用户定了新目标:「更谨慎、精准、对冲，让波动少点」。
+/// 累计收益和超额是**结果**,今天做什么都改不了它们;能动手的旋钮只有两个 ——
+/// **暴露多大**、**波动多大**。首屏只印结果,等于每天盯着一个自己当下改不了的数。
+///
+/// 三个比率故意分开,它们回答的不是同一个问题:
+///   · `netDeltaRatio`     方向口径 —— 波动按它来(卖 call 覆盖掉的那部分不算暴露)
+///   · `equityGrossRatio`  融资口径 —— 券商按它收保证金,和方向无关
+///   · `buyingPowerRatio`  余量     —— 它见底才是真的动不了
+/// 只报其中一个都会误导:只报融资口径像在说「你满仓杠杆」,只报方向口径像在说「你很轻」。
+struct DeskRisk: Equatable {
+    let netDeltaRatio: Double?
+    let netDeltaNotional: Double?
+    let equityGrossRatio: Double?
+    let buyingPowerRatio: Double?
+    let marginDebt: Double?
+    let concentrationSymbol: String?
+    let concentrationShare: Double?
+    /// 滚动波动的窗口长度(交易日)。文案里要印出来 —— 「波动 13%」不说窗口等于没说。
+    let volWindow: Int
+    let volCC: Double?
+    let volQQQ: Double?
+    /// 整整一个窗口之前的同一指标 + 它的日期。**对照点不取前一天** ——
+    /// 相邻两天的滚动 σ 差别几乎全是噪声,拿它说「在降」等于看噪声下结论。
+    let volCCPrev: Double?
+    let volCCPrevDate: String?
+    /// 持仓快照的时间。**它和收益那几个数不是同一个时点** —— 收益读逐日序列,
+    /// 暴露读覆盖式单快照。同框显示两个时间,免得有人拿上周的持仓解释今天的回撤。
+    let exposureAsof: String?
+    /// 有没有腿缺 delta / 缺标的现价。不完整时净 delta 是**低估**,必须说。
+    let complete: Bool
+    let incompleteNote: String?
+
+    /// 波动在降还是在升。差额小于 1 个百分点当持平 —— 滚动 σ 本身的噪声就有这个量级。
+    var volTrend: (arrow: String, text: String)? {
+        guard let now = volCC, let prev = volCCPrev, let d = volCCPrevDate else { return nil }
+        let delta = now - prev
+        if abs(delta) < 0.01 {
+            return ("arrow.right", String(format: "与一个窗口前持平（%@ %.1f%%）", d, prev * 100))
+        }
+        return (delta < 0 ? "arrow.down.right" : "arrow.up.right",
+                String(format: "%@：一个窗口前是 %.1f%%（%@）",
+                       delta < 0 ? "在降" : "在升", prev * 100, d))
     }
 }
 

@@ -95,14 +95,21 @@ func usd2(_ v: Double) -> String {
 func qty(_ v: Double) -> String {
     v == v.rounded() ? String(Int(v)) : String(format: "%.2f", v)
 }
-/// `YYYY-MM-DD` → 距今天几个自然日(负数=已过)。到期天数用它。
-func daysFromToday(_ ymd: String, now: Date = Date()) -> Int? {
+/// 交易所日历上的 `YYYY-MM-DD` → Date。**只此一份** ——
+/// 图表的 x 轴必须是真日期(拿字符串当类目轴会把几百个标签糊成一条黑线,实测),
+/// 而两个页面各建一个 DateFormatter 就是两处会漂的时区判据。
+let exchangeYMD: DateFormatter = {
     let f = DateFormatter()
     f.calendar = Calendar(identifier: .gregorian)
     f.locale = Locale(identifier: "en_US_POSIX")
-    f.timeZone = TimeZone(identifier: "America/New_York")   // 到期日是交易所日历上的日子
+    f.timeZone = TimeZone(identifier: "America/New_York")   // 交易日是交易所日历上的日子
     f.dateFormat = "yyyy-MM-dd"
-    guard let d = f.date(from: ymd) else { return nil }
+    return f
+}()
+
+/// `YYYY-MM-DD` → 距今天几个自然日(负数=已过)。到期天数用它。
+func daysFromToday(_ ymd: String, now: Date = Date()) -> Int? {
+    guard let d = exchangeYMD.date(from: ymd) else { return nil }
     var cal = Calendar(identifier: .gregorian)
     cal.timeZone = TimeZone(identifier: "America/New_York")!
     let a = cal.startOfDay(for: now), b = cal.startOfDay(for: d)

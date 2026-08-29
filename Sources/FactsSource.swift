@@ -32,7 +32,18 @@ struct SampleFactsSource: FactsSource {
             // 区间机制留着（服务端一旦又出现定性不明的资金流会重新给值），
             // 但现在全窗口资金流逐日已知，所以是 nil —— 不是把不确定藏了，是它不成立了。
             excessRange: nil,
-            flowUnknownDays: 0))
+            flowUnknownDays: 0,
+            // 同样是**实跑抄下来的真数**（/api/desk-summary 的 risk 块，2026-08-29）。
+            // 编一组好看的会让截图上的排版和上线后对不上 —— 这个 app 反复栽的就是那个。
+            risk: DeskRisk(netDeltaRatio: 0.7697, netDeltaNotional: 1_042_902.08,
+                           equityGrossRatio: 2.4984, buyingPowerRatio: 0.01704,
+                           marginDebt: 2_042_256.73,
+                           concentrationSymbol: "QQQ", concentrationShare: 0.9339,
+                           volWindow: 20, volCC: 0.1349, volQQQ: 0.1768,
+                           volCCPrev: 0.3310, volCCPrevDate: "2026-07-30",
+                           exposureAsof: "2026-08-28T16:00:00-04:00",
+                           complete: true, incompleteNote: nil),
+            riskError: nil))
     }
 }
 
@@ -56,6 +67,28 @@ struct LiveFactsSource: FactsSource {
         let is_stale: Bool?
         let benchmark_lag_note: String?
         let excess_range: [Double]?
+        /// 整块可能是 null（持仓快照坏了 / 样本不够算滚动波动）。
+        /// 那时 `risk_error` 有原文 —— **两个都不给默认值**，界面照原文印。
+        let risk: Risk?
+        let risk_error: String?
+
+        struct Risk: Decodable {
+            let net_delta_ratio: Double?
+            let net_delta_notional: Double?
+            let equity_gross_ratio: Double?
+            let buying_power_ratio: Double?
+            let margin_debt: Double?
+            let concentration_symbol: String?
+            let concentration_share: Double?
+            let vol_window: Int
+            let vol_cc: Double?
+            let vol_qqq: Double?
+            let vol_cc_prev: Double?
+            let vol_cc_prev_date: String?
+            let exposure_asof: String?
+            let complete: Bool
+            let incomplete_note: String?
+        }
     }
 
     func load() async -> Result<DeskFacts, DeskError> {
@@ -86,7 +119,22 @@ struct LiveFactsSource: FactsSource {
                     guard let r = p.excess_range, r.count == 2, r[0] < r[1] else { return nil }
                     return r[0]...r[1]
                 }(),
-                flowUnknownDays: p.flow_unknown_days))
+                flowUnknownDays: p.flow_unknown_days,
+                risk: p.risk.map {
+                    DeskRisk(netDeltaRatio: $0.net_delta_ratio,
+                             netDeltaNotional: $0.net_delta_notional,
+                             equityGrossRatio: $0.equity_gross_ratio,
+                             buyingPowerRatio: $0.buying_power_ratio,
+                             marginDebt: $0.margin_debt,
+                             concentrationSymbol: $0.concentration_symbol,
+                             concentrationShare: $0.concentration_share,
+                             volWindow: $0.vol_window,
+                             volCC: $0.vol_cc, volQQQ: $0.vol_qqq,
+                             volCCPrev: $0.vol_cc_prev, volCCPrevDate: $0.vol_cc_prev_date,
+                             exposureAsof: $0.exposure_asof,
+                             complete: $0.complete, incompleteNote: $0.incomplete_note)
+                },
+                riskError: p.risk_error))
         }
     }
 

@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// 首屏。**故意只有这一屏** —— `/appios` 硬约束:登录 + 一个主界面先装进模拟器看过,
-/// 才允许写第 3 个界面。导航范式错了是 N 处返工,不是 1 处。
+/// 首屏。(`/appios` 那条「先跑一屏再铺开」是**门槛不是终点**,五页已于 2026-08-29 铺开。)
 ///
-/// 放什么是算过的(2026-08-29 重核,见 CLAUDE.md「首屏放什么」):
-/// **累计收益 + 对 QQQ 的超额 + 样本天数**,这三个稳、可解释。
-/// 年化不在这儿 —— 194% 的点估计带着 ±85pp 的标准误,「194%」和「110%」统计上分不开,
-/// 做成大字就是每天剧烈跳动且没有信息量。
+/// 放什么是算过的(见 CLAUDE.md「首屏放什么」):**累计收益 + 对 QQQ 的超额 + 现在的风险**。
+/// 年化不在这儿 —— 点估计带着一倍标准误就有 ±21pp,做成大字每天剧烈跳动且没有信息量;
+/// 它在风控页,旁边印着标准误。
+///
+/// 第三块是 2026-08-29 加的。前两块都是**结果**,今天做什么都改不了它们;
+/// 能动手的旋钮只有暴露和波动这两个。首屏只印结果 = 每天盯着一个自己当下改不了的数。
 struct ContentView: View {
     @State private var facts: DeskFacts?
     @State private var error: DeskError?
@@ -35,6 +36,7 @@ struct ContentView: View {
                         FreshnessBanner(freshness: .of(f.stalenessDays(now: now)), asof: f.asof)
                         HeroCard(facts: f)
                         ExcessCard(facts: f)
+                        RiskCard(risk: f.risk, error: f.riskError)
                         FootnoteCard(facts: f)
                     }
                 }
@@ -212,6 +214,117 @@ private struct ExcessCard: View {
                 .foregroundStyle(v >= 0 ? Palette.gain : Palette.loss)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// 现在的风险。**这一块回答「我现在扛着多少」,不回答「我赚了多少」。**
+///
+/// 为什么和收益分开印:收益读的是逐日序列(rh_history,400 个 session),
+/// 暴露读的是覆盖式单快照(rh_*_positions,只有「现在」)。两个时点不同 ——
+/// 所以这张卡自带自己的时间戳,免得有人拿上周的持仓解释今天的回撤。
+private struct RiskCard: View {
+    let risk: DeskRisk?
+    let error: String?
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("现在的风险").font(.subheadline).foregroundStyle(.secondary)
+                    Spacer()
+                    if let a = risk?.exposureAsof, let d = Self.parse(a) {
+                        Text("持仓 " + FreshnessBanner.marketTime.string(from: d))
+                            .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
+                if let r = risk {
+                    body(r)
+                } else {
+                    // **算不出来 ≠ 没有风险。** 这一块消失掉才是最坏的显示方式:
+                    // 界面看起来干干净净,而实际是暴露没人算。
+                    Label("暴露/波动这次没算出来", systemImage: "exclamationmark.triangle.fill")
+                        .font(.subheadline.weight(.medium)).foregroundStyle(Palette.alarm)
+                    Text(error ?? "服务端没给 risk 块，也没给原因 —— 这两种情况都要查服务端。")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func body(_ r: DeskRisk) -> some View {
+        HStack(spacing: 0) {
+            ratio("净暴露", r.netDeltaRatio, suffix: "×", hint: "方向")
+            Divider().frame(height: 38)
+            ratio("融资杠杆", r.equityGrossRatio, suffix: "×", hint: "保证金")
+            Divider().frame(height: 38)
+            ratio("余量", r.buyingPowerRatio, suffix: "%", scale: 100,
+                  hint: "购买力/NLV", warnBelow: 0.05)
+        }
+        Divider()
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(r.volWindow) 日波动").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            volLeg("我", r.volCC, tint: tint(mine: r.volCC, bench: r.volQQQ))
+            volLeg("QQQ", r.volQQQ, tint: Palette.ink.opacity(0.7))
+        }
+        if let t = r.volTrend {
+            Label(t.text, systemImage: t.arrow)
+                .font(.caption)
+                .foregroundStyle(t.arrow == "arrow.down.right" ? Palette.gain
+                                 : (t.arrow == "arrow.up.right" ? Palette.alarm : .secondary))
+        }
+        if let sym = r.concentrationSymbol, let share = r.concentrationShare {
+            Text(String(format: "集中度：%@ 占净暴露 %.0f%%", sym, share * 100))
+                .font(.caption).foregroundStyle(Palette.ink.opacity(0.75))
+        }
+        // 缺 delta 的腿被排除在净 delta 之外 —— 那让暴露看起来**更小**,
+        // 也就是错在最舒服的那一侧。所以这条必须刺眼。
+        if !r.complete, let note = r.incompleteNote {
+            Label(note, systemImage: "questionmark.circle.fill")
+                .font(.caption.weight(.medium)).foregroundStyle(Palette.alarm)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// 我的波动低于基准染绿、高于染橙。**这不是「好/坏」的判断** ——
+    /// 是「离目标近了还是远了」,而目标是用户自己定的:波动少点。
+    private func tint(mine: Double?, bench: Double?) -> Color {
+        guard let m = mine, let b = bench else { return Palette.ink.opacity(0.8) }
+        return m <= b ? Palette.gain : Palette.alarm
+    }
+
+    private func ratio(_ label: String, _ v: Double?, suffix: String,
+                       scale: Double = 1, hint: String, warnBelow: Double? = nil) -> some View {
+        let warn = (warnBelow != nil && v != nil && v! < warnBelow!)
+        return VStack(spacing: 2) {
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+            Text(v.map { String(format: suffix == "%" ? "%.1f%%" : "%.2f×", $0 * scale) } ?? "—")
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(warn ? Palette.alarm : Palette.ink)
+            Text(hint).font(.caption2).foregroundStyle(.secondary.opacity(0.8))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func volLeg(_ label: String, _ v: Double?, tint: Color) -> some View {
+        HStack(spacing: 4) {
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+            Text(v.map { String(format: "%.1f%%", $0 * 100) } ?? "—")
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(tint)
+        }
+    }
+
+    private static func parse(_ iso: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: iso) ?? {
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return f.date(from: iso)
+        }()
     }
 }
 

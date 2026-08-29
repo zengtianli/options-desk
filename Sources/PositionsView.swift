@@ -66,7 +66,12 @@ struct PositionsView: View {
     private func totals(_ p: PortfolioResponse) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Text("合并总账").font(.subheadline.weight(.semibold))
+                // 口径 2026-08-29 收成单户,「合并总账」从此是句假话。
+                // 报合计必标口径 —— 一个户就把它的号印出来,多个户才叫合并。
+                Text(p.accounts.count == 1
+                     ? "账户 \(p.accounts[0].account)"
+                     : "合并总账（\(p.accounts.count) 户）")
+                    .font(.subheadline.weight(.semibold))
                 bigRow("净值", usd(p.totals.total_value), Palette.ink)
                 Divider()
                 KV(k: "股票市值", v: usd(p.totals.equity_value), mono: true)

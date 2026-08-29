@@ -195,6 +195,11 @@ struct PerfMetricsResponse: Decodable {
         let n: Int?
         let se_annual: Double?
         let se_sharpe: Double?
+        /// σ 里含跨空洞的链接时，这两个字段把它的成分摊开。
+        /// **`annual_vol` 本身不变** —— 剔掉接缝会让波动看起来更小，
+        /// 那个方向的口径改动得由看的人自己决定，不由 app 替他做。
+        let seam_variance_share: Double?
+        let annual_vol_ex_seam: Double?
         let insufficient_sample: Bool?
         /// 样本不够时服务端**拒绝给点估计**,并把理由写在这里。这句必须原样显示 ——
         /// 只显示一个空白格会让人以为是 app 没解析出来。
@@ -263,5 +268,89 @@ struct OrdersResponse: Decodable {
         let strike = strikeRaw / 1000
         let k = strike == strike.rounded() ? String(Int(strike)) : String(format: "%.1f", strike)
         return "\(root) \(mm)-\(dd) \(cp)\(k)"
+    }
+}
+
+// MARK: - /api/exposure
+
+/// 当前暴露。**数据源是覆盖式单快照**（rh_*_positions，distinct asof 恒为 1）——
+/// 只回答「现在」，库里没有暴露的历史轨迹。所以这个响应不带序列，也别指望它带。
+struct ExposureResponse: Decodable {
+    let asof: String?
+    let nlv: Double
+    let cash: Double
+    let margin_debt: Double
+    let buying_power: Double
+    let buying_power_ratio: Double?
+    let equity_gross_notional: Double
+    let equity_gross_ratio: Double?
+    let net_delta_notional: Double
+    let net_delta_ratio: Double?
+    let concentration_symbol: String?
+    let concentration_share: Double?
+    let complete: Bool
+    let incomplete_note: String?
+    let underlyings: [Underlying]
+    let settled_legs: [SettledLeg]
+    let settled_note: String?
+    let convention: String?
+
+    struct Underlying: Decodable, Identifiable {
+        let symbol: String
+        let spot: Double?
+        let equity_shares: Double
+        let option_delta_shares: Double
+        let net_delta_shares: Double
+        let net_delta_notional: Double?
+        let ratio_of_nlv: Double?
+        let long_contracts: Double
+        let short_contracts: Double
+        let short_call_contracts: Double
+        /// 空头 call 张数×100 ÷ 多头等价股数。1.0 = 刚好覆盖；>1 = 卖超了。
+        /// **没有空头 call 时是 nil 而不是 0** —— 0% 会被读成「一张都没覆盖」。
+        let short_call_coverage: Double?
+        let delta_missing_legs: [String]
+        let complete: Bool
+        var id: String { symbol }
+    }
+    struct SettledLeg: Decodable, Identifiable {
+        let symbol: String
+        let right: String
+        let strike: Double
+        let expiration: String
+        let side: String
+        let quantity: Double
+        var id: String { "\(symbol)\(expiration)\(right)\(strike)\(side)" }
+    }
+}
+
+// MARK: - /api/vol-trend
+
+/// 滚动年化波动率序列。**「波动少点」这个目标得能被看见才算数** ——
+/// 只印一个当前值没法回答「在降还是在升」，所以这里是序列，不是一个数。
+struct VolTrendResponse: Decodable {
+    let window: Int
+    let start: String
+    let sessions: Int
+    let dates: [String]
+    /// 前 `window` 个点必然是 null（窗口还没填满）。**不是缺数据**，别当错误显示。
+    let cc: [Double?]
+    let qqq: [Double?]
+    let cc_latest: Double?
+    let qqq_latest: Double?
+    let cc_prev: Double?
+    let cc_prev_date: String?
+    /// **线上那几个洞是这里造成的。** 跨越数据空洞的链接把多日涨跌压成「一天」，
+    /// 含它的窗口一律不出值 —— 断开的线要能指出原因，否则只会被读成「数据缺了」。
+    let seam_links: [SeamLink]
+    let seam_note: String?
+    let convention: String?
+    let asof: String?
+
+    struct SeamLink: Decodable, Identifiable {
+        let from: String
+        let to: String
+        let biz_days: Int
+        var id: String { from + "→" + to }
     }
 }
