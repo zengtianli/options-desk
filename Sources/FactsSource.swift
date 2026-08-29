@@ -4,21 +4,24 @@ protocol FactsSource {
     func load() async -> Result<DeskFacts, DeskError>
 }
 
-/// 本地样本源。**数字是真的**(2026-08-29 用回填完 qqq_close 之后的 quant.db 实算,
-/// 且与服务端 /api/desk-summary 独立实现的结果逐位一致),
+/// 本地样本源。**数字是真的** —— 2026-08-29 直接抄 `/api/desk-summary` 的实跑响应,
 /// 这样第一屏截图里的排版就是上线后真实的量级,不会出现「样本三位数、真数据五位数」那种返工。
+///
+/// ⚠ 这批数比第一版低,不是算错了,是**归日口径修好了**:快照不是收盘时刻拉的,
+/// 原来按 `asof[:10]` 归日有 28% 的行归错天 —— 少算 4 个交易日、且基准价整体错位一天。
+/// 改按 `session` 归日之后:样本 50 → 54 天,TWR 23.35% → 22.45%,QQQ 1.88% → 1.22%。
 struct SampleFactsSource: FactsSource {
     var asofOverride: Date?
 
     func load() async -> Result<DeskFacts, DeskError> {
         var c = DateComponents()
-        c.year = 2026; c.month = 8; c.day = 27; c.hour = 16
+        c.year = 2026; c.month = 8; c.day = 28; c.hour = 16
         c.timeZone = TimeZone(identifier: "America/New_York")   // 见 ContentView.marketTime 的例外说明
         let asof = asofOverride ?? Calendar(identifier: .gregorian).date(from: c)!
         return .success(DeskFacts(
-            asof: asof, nlv: 1_365_065.92,
-            twrCumulative: 0.2335, qqqCumulative: 0.0188,
-            sampleDays: 50, accounts: ["••••6277", "••••3444"], flowUnknownDays: 17))
+            asof: asof, nlv: 1_354_906.14,
+            twrCumulative: 0.2244_5918, qqqCumulative: 0.0121_6394,
+            sampleDays: 54, accounts: ["••••6277", "••••3444"], flowUnknownDays: 18))
     }
 }
 
