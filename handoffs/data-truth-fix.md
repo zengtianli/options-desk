@@ -291,3 +291,94 @@ nginx vhost + systemd unit 按 VPS 上现成的 `edu-points` 范式手落（仍�
 | 真缺的 3 个 session（06-17 / 06-26 / 07-07） | 没有历史 portfolio 接口可补 |
 | `net_deposit` 的 0 与 NULL 被合并 | `fetch_data.append_history` 里 `dep = ... or 0.0`，dump 没带这个字段时写 0 而不是 NULL —— 即「当天没有外部流水」被断言成事实。**本轮未改行为**（改了会让更多天变成「未知」，且多数天确实没流水），先记在这里 |
 | 装真机 | 需要用户把 iPhone 连上：`./install-to-iphone.sh && bash seed-gate.sh` |
+
+---
+
+## 2026-08-29 第三轮 · 独立复核（4 路并行）与它挖出来的东西
+
+上一轮我写「三条新守卫都做过反向验证」。派 4 个独立 agent 复核之后，**其中一条是假的**。
+
+### 一、`numbers` 判 PASS —— 但指出首屏用了未结算的基准价
+
+17 项被复核值全部 MATCH（8 位小数逐位相同），三条声称的事实（44 行错位 / 真缺 3 天 /
+qqq_close 已按 session 对齐）全部核实为真。
+
+但它发现：`2026-08-28` 的 `qqq_close = 716.44` 是**未结算的实时成交价**
+（CSV 的 source 列自己写着 `unofficial_close_not_yet_settled`，而 MCP 那天的日 bar 是
+`interpolated: true / volume=0` 的 gap-fill）。用它算出的超额比用已结算价高 **0.66pp**。
+
+### 二、`guards` 判 FAIL —— qqq_close 那条链三处独立失守
+
+| # | 失守 | 实证 |
+|---|---|---|
+| 1 | `test_qqq_close_aligned_to_session_not_label` **抓不到它命名的那个 bug** | 把整列改成 `1.23`，仍 4 passed。断言查的是「同一 session 内多个值打不打架」，从不与价格源比对；而 54 个 session 里 **42 个只有一行非空值**，那些 session 上任何错值**结构上不可能被看见** |
+| 2 | `--repair` 报出 3 行错值仍 `exit 0` | 当不了红绿门：不带 `--apply` 恒绿，带了就改库，没有第三态 |
+| 3 | **默认模式仍在用 `substr(asof,1,10)`** | 会把 `--repair` 刚修对的值改回错的，且 exit 0 无警告（实测偏 $23.43）。判据散在同一文件两处需人工同步 = 铁律 #5 那个形态 |
+
+**第 1 条最该记住**：我上一轮的「反向验证」注入的恰好是它唯一能抓的那种形态
+（两行 session 里改一行），所以看起来是绿的。**比不测更隐蔽，因为它看起来像在测。**
+
+修法：判据换成与权威源逐值比对（复用 `backfill_qqq_close.plan_rows`，禁另写一份
+「我以为它怎么算」）；加 `--verify` 纯只读红绿门；两个模式共用一个判据；
+未结算价一律不进基准列（`is_unsettled`）。
+反向验证 **4 发注入 + 空表**（整列 1.23 / 单行改成标签日收盘 / 塞回未结算价 / 清空表）
+**全部判红**，基线绿。
+
+### 三、服务端顺带修出来的两个同类问题
+
+- **比较窗口不一样长**：TWR 算到最后一个 session，基准把尾部 None 丢掉、只算到上一个 session，
+  两个不同窗口的数并排印成「我 vs QQQ 同窗口」。现在两条一起截到最后一个有已结算基准的 session，
+  并新增 `nlv_date` / `sessions_total` / `sessions_awaiting_benchmark` / `benchmark_lag_note`。
+- **`_curve_metrics` 的 20 点门槛在 53 个样本上等于没有门槛**：会端出「年化 +161.9%」
+  而返回体里既没有 n 也没有误差带。门槛提到 120 个交易日，返回体强制带 `n` / `se_annual` / `se_sharpe`；
+  顺带修了「波动几乎为零」时 Sharpe 顶到 `5.2e13` 的退化（`sigma_d ≈ 1e-16` 过得了 `> 0` 那道门）。
+
+### 四、首屏最终数字（窗口截齐后）
+
+```
+窗口      2026-06-09 → 2026-08-27   53 个 session / 52 个链接
+TWR 累计  +23.36%   ← 仍是暂定值(18 天资金流未记录)
+QQQ 同窗  +1.88%
+★ 超额    +21.49pp
+净值      $1,354,906   (数据到 08-28，比比较窗口晚一天，界面上「窗口」那行说明了)
+```
+
+与独立 agent 自己算的第三情景逐位一致（`n=52 cum=0.233641 qcum=0.018762 excess=0.214879`）。
+
+### 五、`deploy` 判 PASS+ —— 没有裸奔，问题在登记与属主
+
+**21 条未认证探测**（含大小写 / 双斜杠 / 点段 / 查询串 / 静态资源）全部 302 到 `/_gate/login`
+且带 cf-ray；源站 8642 只听 127.0.0.1；API 零写端点、sqlite `mode=ro`。已修的两项：
+
+- **surfaces 登记在扫不到的深度**：`app_registry` 扫 stations 用 `children` 模式，
+  我写在 `services/catalog.yaml`（深度 2）扫不到。audit 只会说「无主」，**不会说
+  「你登记的地方我没看」**。字段名也自创了（`kind`/`nginx-vhost`/`detail` → `type`/`vhost`/`note`，
+  systemd 的 id 不带 `.service`）。已移到 `web-stack/catalog.yaml`，**gate-vps 2 红 → 0 红**。
+- **`rsync -a` 把 Mac 的 UID 502 一起同步过去了**：VPS 上 quant.db 属主是一个不存在的用户、
+  权限 0644，而它含账户净值。改成 `--no-owner --no-group --no-perms` + 推完 `chown root:www-data`
+  `chmod 640` + 回读 `stat` 校验。在 VPS 临时路径上真跑一次验过。
+
+### 六、`dead-endpoints` 判 PASS+ —— 7 个 503 的处置，以及我**刻意没做**的部分
+
+| 端点 | quant.db 有没有替代 | 判定 | 本轮怎么处理 |
+|---|---|---|---|
+| `scenarios` / `roll-signals` | 有（`rh_*_positions` + quotes） | 干净可迁移 | **没做**，见下 |
+| `twr` / `perf-metrics` | 只有 QQQ，**没有 SPY / TQQQ**（`klines` 停在 06-05，与 rh_history 交集 = 0 天；TQQQ 全库只有汇总统计无日频价） | 迁过去必然从 4 条线缩水成 2 条 | 只加了样本门槛与误差带，不迁 |
+| `harness` | 卡在 SPY 上（`BENCHMARK_WEIGHTS = qqq 0.7 / spy 0.3`） | 缺 SPY 只能退回 v1 口径 = 规格回退 | 保持 503（本轮已改成 fail-closed） |
+| `weekly-net-roe` | 是重写不是迁移 | — | 保持 503 |
+| `activities` | **没有**。旧源 5852 条里 CONTRIBUTION/WITHDRAWAL/FEE/DIVIDEND/INTEREST 五类在库里一条都没有；`rh_equity_orders` 只有 43 行（06-17 起） | 该退役 | 保持 503 |
+
+**为什么 scenarios / roll-signals 没迁**：它们不被本 app 消费（app 只吃 `/api/desk-summary`），
+迁移要写一个 quant.db → SnapTrade 形状的适配器（~60 行），属于给这个服务加功能，
+不是把本项目的活干完。**这是刻意的范围判断，不是漏掉** —— 要做的话代价与做法已经写在上面这张表里。
+
+### 七、复核挖出来但**不归本项目**的两条（未动）
+
+`app_registry audit` 的 `gate-local` 仍有 2 红，都早于本轮存在、且需要别的域拍板：
+
+- `com.tianli.cases-due` 无主 —— 它属于 `~/Archives/ip-legal`，而 **`~/Archives` 根本不在
+  `app_registry.SCAN_ROOTS` 里**，所以这条红在当前工具结构下**无法被认领**。
+  要么把 `~/Archives` 加进扫描根，要么在某个被扫到的 catalog 里代管。
+- `com.tianli.downloads-router` 声明存在但已死 —— raycast 脚本全在 `_archive/`、launchctl 无此 label，
+  但 plist 模板还在 `lib/tools/downloads_triage/`。是「已退役该删声明」还是「该重装」，
+  证据不足以替 `~/Dev/tools/dev` 那边拍板，故只报告不动手。
