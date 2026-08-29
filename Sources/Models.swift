@@ -101,6 +101,10 @@ struct TwrResponse: Decodable {
     let sessions: Int
     let sessions_awaiting_benchmark: Int?
     let flow_unknown_days: Int?
+    /// **真正会污染收益率的是「链接」不是「天」** —— 窗口第一天的资金流只当分母基点,
+    /// 不进任何一个链接。锚日 2026-07-09 恰好是那种情况:报「1 天未知」会让人以为
+    /// 曲线不可信,而受影响的链接是 0 个。
+    let flow_unknown_links: Int?
     let provisional: Bool?
     let asof: String?
 }
@@ -169,6 +173,8 @@ struct HarnessResponse: Decodable {
     let cc_curve: String?
     let provisional: Bool?
     let provisional_reason: String?
+    let flow_unknown_days: Int?
+    let flow_unknown_links: Int?
     let as_of: String?
 }
 

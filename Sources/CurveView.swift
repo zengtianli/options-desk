@@ -29,6 +29,9 @@ struct CurveView: View {
     /// 区间档。**默认落在记分板锚日** —— 换锚 = 换了一个问题
     /// (`race_series.py` 那次事故就是悄悄换了起点,结论从「领先」翻成「落后」),
     /// 所以档位是**显式的五个**,不是一个能悄悄改变结论的下拉框,而且当前档一直显示在标题右边。
+    /// 锚日只此一处 —— 见 DeskWindow。这里保留一个同名别名,免得下面几十处都要改。
+    static var raceAnchor: String { DeskWindow.raceAnchor }
+
     @State private var range: Range = {
         // `-range w1|m1|m3|anchor|all` —— 只为截图存在,同 -tab / -openDay。
         // 没有它,这五个档就只能靠「编译过了」来相信。
@@ -37,7 +40,6 @@ struct CurveView: View {
               let r = Range(rawValue: a[i + 1]) else { return .anchor }
         return r
     }()
-    static let raceAnchor = "2026-07-09"
 
     enum Range: String, CaseIterable, Identifiable {
         case w1, m1, m3, anchor, all
@@ -342,8 +344,10 @@ struct CurveView: View {
                          + "再把现金流从期末口径换到期初 → +4.23。这里走后者。")
                         .font(.caption2).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                } else if t.provisional == true, let f = t.flow_unknown_days, f > 0 {
-                    KV(k: "暂定", v: "\(f) 个交易日的资金流无记录，曲线在那几天是暂定值",
+                } else if t.provisional == true, let f = t.flow_unknown_links, f > 0 {
+                    // 判据是**受影响的链接数**,不是「有几天没记录」——
+                    // 窗口首日的流只当分母基点,不进任何链接。
+                    KV(k: "暂定", v: "\(f) 个链接日的资金流无记录，曲线在那几段是暂定值",
                        tint: Palette.alarm)
                 }
             }
