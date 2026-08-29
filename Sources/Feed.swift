@@ -63,6 +63,23 @@ struct FeedPost: Codable, Hashable, Identifiable {
     var siteKey: String = ""
     var id: String { "\(siteKey)/\(slug)/\(lang)" }
 
+    /// 合成一条「只有市场读、复盘还没发布」的行。
+    ///
+    /// 为什么需要它：自动链**故意不发布博客**（`review_auto.py` 的负边界原话是
+    /// 「自动链跑到 md + 配图 + 封面都写好为止，发布留人审稿后自己点」）。
+    /// 于是每天收盘后的真实状态是：市场读已经进库了，博文还在工作树里等审。
+    /// 列表只读 feed 的话，那一天在 app 里**根本够不着** —— 而它恰恰是最新的一天。
+    ///
+    /// `slug` 留空是判据，不是占位：详情页据此跳过博文请求（没有 slug 可请求），
+    /// 只渲染市场读 + 当天成交。
+    init(marketReadOnly date: String) {
+        slug = ""; lang = "zh"; title = "市场读 · \(date)"
+        self.date = date
+        excerpt = "这一天的复盘还没发布，先看市场读与当天成交。"
+        tags = []; category = nil; series = "market-read"; image = nil
+        url = ""; views = 0; siteKey = "options"
+    }
+
     private enum CodingKeys: String, CodingKey {
         case slug, lang, title, date, excerpt, tags, category, series, image, url, views
     }

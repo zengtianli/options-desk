@@ -354,3 +354,18 @@ struct VolTrendResponse: Decodable {
         var id: String { from + "→" + to }
     }
 }
+
+/// 每日「市场读」——「新闻」那一半。`/api/market-read[?date=]`
+///
+/// **不是第三方新闻流**：这是复盘八件套里那份 `market_reads/YYYYMMDD.md`，
+/// 已经把新闻过滤成「对我这本账意味着什么」。服务端把它从 quant.db 里读出来。
+/// `available` 每次都带 —— 列表页拿它和博客 feed 求并集，
+/// 否则「市场读已经在库、博文还没发」的那些天在 app 里够不着（自动链故意不发布）。
+struct MarketReadResponse: Decodable {
+    let date: String
+    let body: String
+    let chars: Int
+    let synced_at: String?
+    let count: Int
+    let available: [String]
+}
