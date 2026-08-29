@@ -3,7 +3,13 @@
 > iOS 只读盘面。父级形态规则 `~/Apps/ios/CLAUDE.md`，建 app 的通用坑单 `/appios`，
 > 全局偏好 `~/.claude/CLAUDE.md`。姊妹 app：`~/Apps/ios/options-calc`（期权决策台）。
 
-**2026-08-28 立。当前只有脚手架，没有 UI —— 按对齐的顺序，先修数据口径再建界面。**
+**2026-08-28 立，2026-08-29 装上真机。** 口径三轮修完 → API 上线（`desk.tianli.cyou`，authgate 闸内）
+→ iPhone 17 装机成功并**实测取到闸内真数**。首屏一屏（累计收益 / 对 QQQ 超额 / 样本天数），
+按 `/appios` 硬约束「先跑一屏再铺开」，第 2、3 屏尚未写。
+
+> **凭证续期这条路已实测**（不是推断）：卸载重装清空容器 cookie 后，app 只凭 iOS 钥匙串里的密码
+> 自己换了新会话 —— 服务端日志 `302 → /_gate/login 200 → POST /_gate/api/login 200 → /api/desk-summary 200`。
+> 这条每 7 天真实走一次（闸 cookie `Max-Age=604800`），不验的话「点开就有数」只在头 7 天成立。
 
 ## 这个 app 回答什么
 

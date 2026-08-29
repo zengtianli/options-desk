@@ -1,8 +1,10 @@
 name: options-desk
 origin: own
-lifecycle: incubating       # 2026-08-28 立。2026-08-29 更新:API 已上线(desk.tianli.cyou,
-                            # authgate 闸内),app 默认指向它,模拟器带凭证实跑渲染出真数。
-                            # **仍是 incubating —— 还没装到真机上、还没日常在用。**装上并用起来 → active
+lifecycle: active           # 2026-08-28 立 → 2026-08-29 转 active:API 上线(desk.tianli.cyou,
+                            # authgate 闸内)+ iPhone 17 真机装机成功 + 闸内取真数实测通过
+                            # (含卸载重装后只凭 iOS 钥匙串自动续会话那条路)。
+                            # ⚠ 判据是「装上并在用」,不是「能跑」—— 若 app_vitals 实测长期零使用,
+                            # 该退回 incubating,别让声明比事实好看
 form: ios
 
 one_liner: 投资盘面 —— 随时一眼看到净值 / 累计收益 / 对 QQQ 的超额 / buffer / 票据梯子,数据来自每日复盘那条链
